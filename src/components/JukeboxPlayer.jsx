@@ -204,8 +204,8 @@ export default function JukeboxPlayer() {
           backdropFilter: 'blur(10px)',
           cursor: isDragging ? 'grabbing' : isCompact ? 'pointer' : 'grab',
           transition: isDragging ? 'none' : 'all 0.3s ease',
-          maxWidth: isCompact ? '320px' : '760px',
-          width: isCompact ? '320px' : '760px'
+          maxWidth: isCompact ? '350px' : '760px',
+          width: isCompact ? '350px' : '760px'
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '6px', marginBottom: '2px' }}>
@@ -320,13 +320,13 @@ export default function JukeboxPlayer() {
               <span style={{ fontSize: '10px', color: '#06b6d4', fontWeight: 'bold', textTransform: 'uppercase' }}>
                 {isPlaying ? '▶ Tocando' : '⏸ Pausado'}
               </span>
-              <span style={{ fontSize: '12px', fontWeight: 600, color: '#f8fafc', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isCompact ? '110px' : '240px' }}>
+              <span style={{ fontSize: '12px', fontWeight: 600, color: '#f8fafc', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isCompact ? '90px' : '240px' }}>
                 {currentTrack ? currentTrack.title || currentTrack.id : 'Nenhuma mídia'}
               </span>
             </div>
           </div>
 
-          {/* Controlos com stopPropagation para evitar expandir o player ao clicar neles */}
+          {/* Controlos com stopPropagation para não expandir o player ao clicar neles */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <button 
               onClick={(e) => {
@@ -367,6 +367,25 @@ export default function JukeboxPlayer() {
             </button>
           </div>
 
+          {/* Controlo de Volume (Disponível no modo compacto e expandido com stopPropagation) */}
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            onWheel={handleVolumeWheel}
+            title="Rode a roda do rato para ajustar o volume"
+            style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'ns-resize' }}
+          >
+            <span style={{ fontSize: '12px' }}>{volume === 0 ? '🔇' : '🔊'}</span>
+            <input 
+              type="range" 
+              min="0" 
+              max="1" 
+              step="0.05" 
+              value={volume} 
+              onChange={(e) => setVolume(parseFloat(e.target.value))} 
+              style={{ width: isCompact ? '38px' : '45px', accentColor: '#008891', cursor: 'pointer' }} 
+            />
+          </div>
+
           {!isCompact && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <button onClick={handleDownloadCurrent} disabled={isDownloading} className="btn btn-dark btn-sm" style={{ backgroundColor: '#0284c7', color: '#fff', fontSize: '11px' }}>
@@ -384,15 +403,6 @@ export default function JukeboxPlayer() {
               >
                 {isVideoMode ? '🎬 Vídeo' : '🎵 Áudio'}
               </button>
-
-              <div 
-                onWheel={handleVolumeWheel}
-                title="Rode a roda do rato para ajustar o volume"
-                style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'ns-resize' }}
-              >
-                <span style={{ fontSize: '12px' }}>{volume === 0 ? '🔇' : '🔊'}</span>
-                <input type="range" min="0" max="1" step="0.05" value={volume} onChange={(e) => setVolume(parseFloat(e.target.value))} style={{ width: '45px', accentColor: '#008891', cursor: 'pointer' }} />
-              </div>
             </div>
           )}
         </div>
