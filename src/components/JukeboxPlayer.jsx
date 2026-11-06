@@ -38,7 +38,6 @@ export default function JukeboxPlayer() {
   const audioSource = currentTrack?.streamUrl?.audio || currentTrack?.streamUrl;
   const videoSource = currentTrack?.streamUrl?.video;
 
-  // Reabre o player automaticamente sempre que a música atual ou a fila mudam e há itens para reproduzir
   useEffect(() => {
     if (currentTrack || queue.length > 0) {
       setIsVisible(true);
@@ -209,7 +208,6 @@ export default function JukeboxPlayer() {
           width: isCompact ? '320px' : '760px'
         }}
       >
-        {/* Cabeçalho com o botão de fechar (X) no canto superior direito */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '6px', marginBottom: '2px' }}>
           <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#008891', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
             🎵 Jukebox Player
@@ -328,10 +326,13 @@ export default function JukeboxPlayer() {
             </div>
           </div>
 
-          {/* Controlos de Navegação (Retroceder, Play/Pause e Avançar) - Disponíveis em ambos os modos */}
+          {/* Controlos com stopPropagation para evitar expandir o player ao clicar neles */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <button 
-              onClick={playPrevious} 
+              onClick={(e) => {
+                e.stopPropagation();
+                playPrevious();
+              }} 
               disabled={currentIndex === 0} 
               className="btn btn-dark btn-sm" 
               style={{ borderRadius: '50%', width: isCompact ? '28px' : '30px', height: isCompact ? '28px' : '30px', padding: 0, fontSize: '11px' }}
@@ -353,7 +354,10 @@ export default function JukeboxPlayer() {
             </button>
 
             <button 
-              onClick={playNext} 
+              onClick={(e) => {
+                e.stopPropagation();
+                playNext();
+              }} 
               disabled={currentIndex + 1 >= queue.length} 
               className="btn btn-dark btn-sm" 
               style={{ borderRadius: '50%', width: isCompact ? '28px' : '30px', height: isCompact ? '28px' : '30px', padding: 0, fontSize: '11px' }}
