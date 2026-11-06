@@ -16,9 +16,14 @@ app.use(express.json());
 // 🚀 Porta dinâmica para o Render (ou 5000 por omissão localmente)
 const PORT = process.env.PORT || 5000;
 
-// Configuração do Supabase
-const SUPABASE_URL = 'https://sapgbneukbkfegicgomc.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_ro8NvmbsyqytdjN7AOb5Gw_AQYMzLk4';
+// Configuração do Supabase a ler das Variáveis de Ambiente do Render
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+  console.warn("⚠️ ATENÇÃO: As variáveis SUPABASE_URL ou SUPABASE_KEY não estão definidas no ambiente!");
+}
+
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: false }
 });
