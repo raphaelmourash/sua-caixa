@@ -38,7 +38,7 @@ export default function JukeboxPlayer() {
   const audioSource = currentTrack?.streamUrl?.audio || currentTrack?.streamUrl;
   const videoSource = currentTrack?.streamUrl?.video;
 
-  // 🎯 Reabre o player automaticamente sempre que a música atual ou a fila mudam e há itens para reproduzir
+  // Reabre o player automaticamente sempre que a música atual ou a fila mudam e há itens para reproduzir
   useEffect(() => {
     if (currentTrack || queue.length > 0) {
       setIsVisible(true);
@@ -205,8 +205,8 @@ export default function JukeboxPlayer() {
           backdropFilter: 'blur(10px)',
           cursor: isDragging ? 'grabbing' : isCompact ? 'pointer' : 'grab',
           transition: isDragging ? 'none' : 'all 0.3s ease',
-          maxWidth: isCompact ? '300px' : '760px',
-          width: isCompact ? '300px' : '760px'
+          maxWidth: isCompact ? '320px' : '760px',
+          width: isCompact ? '320px' : '760px'
         }}
       >
         {/* Cabeçalho com o botão de fechar (X) no canto superior direito */}
@@ -322,16 +322,23 @@ export default function JukeboxPlayer() {
               <span style={{ fontSize: '10px', color: '#06b6d4', fontWeight: 'bold', textTransform: 'uppercase' }}>
                 {isPlaying ? '▶ Tocando' : '⏸ Pausado'}
               </span>
-              <span style={{ fontSize: '12px', fontWeight: 600, color: '#f8fafc', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isCompact ? '130px' : '240px' }}>
+              <span style={{ fontSize: '12px', fontWeight: 600, color: '#f8fafc', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isCompact ? '110px' : '240px' }}>
                 {currentTrack ? currentTrack.title || currentTrack.id : 'Nenhuma mídia'}
               </span>
             </div>
           </div>
 
+          {/* Controlos de Navegação (Retroceder, Play/Pause e Avançar) - Disponíveis em ambos os modos */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            {!isCompact && (
-              <button onClick={playPrevious} disabled={currentIndex === 0} className="btn btn-dark btn-sm" style={{ borderRadius: '50%', width: '30px', height: '30px', padding: 0 }}>⏮</button>
-            )}
+            <button 
+              onClick={playPrevious} 
+              disabled={currentIndex === 0} 
+              className="btn btn-dark btn-sm" 
+              style={{ borderRadius: '50%', width: isCompact ? '28px' : '30px', height: isCompact ? '28px' : '30px', padding: 0, fontSize: '11px' }}
+              title="Retroceder"
+            >
+              ⏮
+            </button>
             
             <button 
               onClick={(e) => {
@@ -340,13 +347,20 @@ export default function JukeboxPlayer() {
               }} 
               className="btn btn-yellow" 
               style={{ width: isCompact ? '34px' : '38px', height: isCompact ? '34px' : '38px', borderRadius: '50%', padding: 0, fontSize: '14px' }}
+              title={isPlaying ? "Pausar" : "Tocar"}
             >
               {isPlaying ? '⏸' : '▶'}
             </button>
 
-            {!isCompact && (
-              <button onClick={playNext} disabled={currentIndex + 1 >= queue.length} className="btn btn-dark btn-sm" style={{ borderRadius: '50%', width: '30px', height: '30px', padding: 0 }}>⏭</button>
-            )}
+            <button 
+              onClick={playNext} 
+              disabled={currentIndex + 1 >= queue.length} 
+              className="btn btn-dark btn-sm" 
+              style={{ borderRadius: '50%', width: isCompact ? '28px' : '30px', height: isCompact ? '28px' : '30px', padding: 0, fontSize: '11px' }}
+              title="Avançar"
+            >
+              ⏭
+            </button>
           </div>
 
           {!isCompact && (
