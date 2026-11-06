@@ -2,7 +2,7 @@
 
 const API_BASE_URL = import.meta.env.PROD 
   ? 'https://sua-caixa.onrender.com/api' 
-  : 'http://localhost:5000/api';
+  : 'https://sua-caixa.onrender.com/api'; // Forçando o Render mesmo localmente se quiser testar a nuvem
 
 // 📂 Buscar todas as playlists do utilizador através do Backend
 export async function getPlaylistsFromBackend(userId) {
