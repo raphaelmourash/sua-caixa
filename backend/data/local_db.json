@@ -1,0 +1,15 @@
+{
+  "users": [
+    {
+      "id": "raphaelmoura@gmail.com",
+      "email": "raphaelmoura@gmail.com",
+      "password": "Tr@xxfor1650"
+    },
+    {
+      "id": "raphael.moura.sh@gmail.com",
+      "email": "raphael.moura.sh@gmail.com",
+      "password": "123456"
+    }
+  ],
+  "playlists": {}
+}
