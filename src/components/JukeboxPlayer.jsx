@@ -25,7 +25,7 @@ export default function JukeboxPlayer() {
   const [isCompact, setIsCompact] = useState(false);
   const [isVisible, setIsVisible] = useState(true);
 
-  // Drag & Drop
+  // Drag & Drop do Player Flutuante
   const [position, setPosition] = useState({ x: 20, y: window.innerHeight - 190 });
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef({ startX: 0, startY: 0, initialX: 0, initialY: 0 });
@@ -37,6 +37,27 @@ export default function JukeboxPlayer() {
 
   const audioSource = currentTrack?.streamUrl?.audio || currentTrack?.streamUrl;
   const videoSource = currentTrack?.streamUrl?.video;
+
+  // 🎯 Salva e restaura o currentTime exato ao alternar entre Vídeo e Áudio para evitar reset/delay
+  const savedCurrentTimeRef = useRef(0);
+
+  // Antes de mudar o modo, guarda a posição atual
+  const handleToggleVideoModeWithPreservation = () => {
+    const activeTime = audioRef.current?.currentTime || videoRef.current?.currentTime || progress || 0;
+    savedCurrentTimeRef.current = activeTime;
+    
+    // Alterna o modo de visualização
+    toggleVideoMode();
+  };
+
+  // Restaura a posição assim que o novo elemento for montado ou carregado
+  useEffect(() => {
+    const targetTime = savedCurrentTimeRef.current;
+    if (targetTime > 0) {
+      if (audioRef.current) audioRef.current.currentTime = targetTime;
+      if (videoRef.current) videoRef.current.currentTime = targetTime;
+    }
+  }, [isVideoMode]);
 
   useEffect(() => {
     if (currentTrack || queue.length > 0) {
@@ -326,7 +347,7 @@ export default function JukeboxPlayer() {
             </div>
           </div>
 
-          {/* Controlos com stopPropagation para não expandir o player ao clicar neles */}
+          {/* Controlos com stopPropagation */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <button 
               onClick={(e) => {
@@ -367,7 +388,7 @@ export default function JukeboxPlayer() {
             </button>
           </div>
 
-          {/* Controlo de Volume (Disponível no modo compacto e expandido com stopPropagation) */}
+          {/* Controlo de Volume com stopPropagation */}
           <div 
             onClick={(e) => e.stopPropagation()}
             onWheel={handleVolumeWheel}
@@ -397,7 +418,7 @@ export default function JukeboxPlayer() {
               </button>
 
               <button 
-                onClick={toggleVideoMode} 
+                onClick={handleToggleVideoModeWithPreservation} 
                 className={`btn btn-sm ${isVideoMode ? 'btn-teal' : 'btn-dark'}`} 
                 style={{ fontSize: '11px', fontWeight: 'bold' }}
               >
