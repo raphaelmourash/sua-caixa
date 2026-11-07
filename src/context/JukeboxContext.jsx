@@ -1,7 +1,16 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { getStreamUrl } from '../services/ytdlp';
 
 const JukeboxContext = createContext();
+
+// URLs assinadas do YouTube expiram em ~6h; renovamos antes disso
+const STREAM_TTL_MS = 5 * 60 * 60 * 1000;
+
+// getStreamUrl pode devolver string (só áudio) ou { audio, video }
+const toStreams = (r) =>
+  typeof r === 'string'
+    ? { audio: r, video: null }
+    : { audio: r?.audio ?? null, video: r?.video ?? null };
 
 export function JukeboxProvider({ children }) {
   const [queue, setQueue] = useState([]);
@@ -10,26 +19,56 @@ export function JukeboxProvider({ children }) {
   const [currentTrack, setCurrentTrack] = useState(null);
   const [isVideoMode, setIsVideoMode] = useState(false);
 
-  // Resolve a stream via yt-dlp sempre que o índice da fila ou o modo de vídeo mudar
-  useEffect(() => {
-    async function resolveStream() {
-      if (queue.length > 0 && queue[currentIndex]) {
-        const track = queue[currentIndex];
-        const targetUrl = track.webpage_url || track.url;
+  // Cache das URLs resolvidas por faixa: a URL do ÁUDIO nunca muda enquanto a faixa toca,
+  // senão o <audio> recarrega e a música reinicia do começo.
+  const streamCache = useRef(new Map());
 
-        try {
-          const directStream = await getStreamUrl(targetUrl, '', isVideoMode);
-          setCurrentTrack({ ...track, streamUrl: directStream });
-        } catch (err) {
-          console.error("Erro ao resolver stream via yt-dlp:", err);
-          setCurrentTrack({ ...track, streamUrl: targetUrl });
+  // Resolve a stream via yt-dlp (com cache por faixa)
+  useEffect(() => {
+    const track = queue[currentIndex];
+    if (!track) {
+      setCurrentTrack(null);
+      return;
+    }
+
+    const targetUrl = track.webpage_url || track.url;
+    let cancelled = false;
+
+    async function resolveStream() {
+      try {
+        const cache = streamCache.current;
+        let entry = cache.get(targetUrl);
+        if (entry && Date.now() - entry.at > STREAM_TTL_MS) entry = null;
+
+        if (!entry) {
+          // Primeira resolução da faixa (ou URL expirada)
+          const res = toStreams(await getStreamUrl(targetUrl, '', isVideoMode));
+          if (!res.audio) throw new Error('Stream sem áudio');
+          entry = { ...res, at: Date.now() };
+        } else if (isVideoMode && !entry.video) {
+          // Já temos o áudio: busca só o vídeo e MANTÉM a URL do áudio (não reinicia a música)
+          const res = toStreams(await getStreamUrl(targetUrl, '', true));
+          entry = { ...entry, video: res.video };
         }
-      } else {
-        setCurrentTrack(null);
+
+        cache.set(targetUrl, entry);
+        if (cache.size > 50) cache.delete(cache.keys().next().value);
+        if (cancelled) return;
+
+        setCurrentTrack({
+          ...track,
+          streamUrl: { audio: entry.audio, video: isVideoMode ? entry.video : null },
+        });
+      } catch (err) {
+        console.error("Erro ao resolver stream via yt-dlp:", err);
+        if (!cancelled) setCurrentTrack({ ...track, streamUrl: targetUrl });
       }
     }
 
     resolveStream();
+    return () => {
+      cancelled = true; // descarta respostas antigas (troca rápida de faixa/modo)
+    };
   }, [currentIndex, queue, isVideoMode]);
 
   // Adiciona faixas à fila existente
