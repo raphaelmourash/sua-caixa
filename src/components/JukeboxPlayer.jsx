@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { useJukebox } from '../context/JukeboxContext';
-import { runYtdlp } from '../services/ytdlp';
+import { useDownloads } from '../context/DownloadContext';
 import QueueDrawer from './QueueDrawer';
 import { useSyncedAV } from '../hooks/useSyncedAV';
 
@@ -30,7 +30,7 @@ export default function JukeboxPlayer() {
   const [volume, setVolume] = useState(1);
   const [volumeBadge, setVolumeBadge] = useState(false);
   const [isQueueOpen, setIsQueueOpen] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
+  const { enqueueDownload, isDownloadingTrack } = useDownloads();
   const [isCompact, setIsCompact] = useState(false);
   const [isVisible, setIsVisible] = useState(true);
 
@@ -214,23 +214,12 @@ export default function JukeboxPlayer() {
     }
   };
 
-  const handleDownloadCurrent = async () => {
+  // Envia para a fila de downloads; o progresso aparece na barra de cada item (DownloadsPanel)
+  const handleDownloadCurrent = () => {
     if (!currentTrack) return;
-    const targetUrl = currentTrack.webpage_url || currentTrack.url;
-    if (!targetUrl) return;
-
-    setIsDownloading(true);
-    try {
-      alert(`A iniciar download de: ${currentTrack.title || currentTrack.id}`);
-      await runYtdlp(targetUrl);
-      alert('Download concluído com sucesso!');
-    } catch (err) {
-      console.error('Erro no download:', err);
-      alert('Erro ao descarregar a faixa.');
-    } finally {
-      setIsDownloading(false);
-    }
+    enqueueDownload(currentTrack, 'audio');
   };
+  const isDownloading = currentTrack ? isDownloadingTrack(currentTrack) : false;
 
   if ((!currentTrack && queue.length === 0) || !isVisible) return null;
 
@@ -496,7 +485,7 @@ export default function JukeboxPlayer() {
           {!isCompact && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <button onClick={handleDownloadCurrent} disabled={isDownloading} className="btn btn-dark btn-sm" style={{ backgroundColor: '#0284c7', color: '#fff', fontSize: '11px' }}>
-                {isDownloading ? '⬇ ...' : '⬇ Baixar'}
+                {isDownloading ? '⬇ Baixando…' : '⬇ Baixar'}
               </button>
               
               <button onClick={() => setIsQueueOpen(true)} className="btn btn-dark btn-sm" style={{ fontSize: '11px', backgroundColor: '#1e293b' }}>
