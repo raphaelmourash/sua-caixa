@@ -4,6 +4,13 @@ import { runYtdlp } from '../services/ytdlp';
 import QueueDrawer from './QueueDrawer';
 import { useSyncedAV } from '../hooks/useSyncedAV';
 
+// Curva de volume: 1 = linear; 2 = mais precisão nos volumes baixos (o ouvido percebe em escala logarítmica).
+// O número exibido continua de 0 a 100%.
+const VOLUME_CURVE = 2;
+
+// Mantém o volume em passos de 1% (evita lixo de ponto flutuante como 0.30000000000000004)
+const clampVolume = (v) => Math.min(1, Math.max(0, Math.round(v * 100) / 100));
+
 export default function JukeboxPlayer() {
   const { 
     currentTrack, 
@@ -20,6 +27,7 @@ export default function JukeboxPlayer() {
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
+  const [volumeBadge, setVolumeBadge] = useState(false);
   const [isQueueOpen, setIsQueueOpen] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [isCompact, setIsCompact] = useState(false);
@@ -32,11 +40,27 @@ export default function JukeboxPlayer() {
 
   const containerRef = useRef(null);
   const videoContainerRef = useRef(null);
+  const volumeBoxRef = useRef(null);
+  const badgeTimerRef = useRef(null);
 
-  const { audioRef, videoRef, handleVideoLoaded } = useSyncedAV(isVideoMode);
+  // Mostra o "65%" por ~1,2s sempre que o volume é mexido
+  const flashVolumeBadge = () => {
+    setVolumeBadge(true);
+    clearTimeout(badgeTimerRef.current);
+    badgeTimerRef.current = setTimeout(() => setVolumeBadge(false), 1200);
+  };
+
+  const changeVolume = (delta) => {
+    setVolume((prev) => clampVolume(prev + delta));
+    flashVolumeBadge();
+  };
+
+  useEffect(() => () => clearTimeout(badgeTimerRef.current), []);
 
   const audioSource = currentTrack?.streamUrl?.audio || currentTrack?.streamUrl;
   const videoSource = currentTrack?.streamUrl?.video;
+
+  const { audioRef, videoRef, handleVideoLoaded } = useSyncedAV(isVideoMode, audioSource);
 
   // 🎯 Salva e restaura o currentTime exato ao alternar entre Vídeo e Áudio para evitar reset/delay
   const savedCurrentTimeRef = useRef(0);
@@ -50,14 +74,37 @@ export default function JukeboxPlayer() {
     toggleVideoMode();
   };
 
-  // Restaura a posição assim que o novo elemento for montado ou carregado
+  // O ÁUDIO É O RELÓGIO MESTRE: ao alternar o modo, só o vídeo é ajustado.
+  // Nunca escrevemos no audio.currentTime aqui (isso causava seek/reset desnecessário).
   useEffect(() => {
     const targetTime = savedCurrentTimeRef.current;
-    if (targetTime > 0) {
-      if (audioRef.current) audioRef.current.currentTime = targetTime;
-      if (videoRef.current) videoRef.current.currentTime = targetTime;
+    if (targetTime > 0 && videoRef.current) {
+      videoRef.current.currentTime = targetTime;
     }
   }, [isVideoMode]);
+
+  // 🛟 Rede de segurança: se o <audio> recarregar a MESMA faixa (ex.: URL nova ao alternar
+  // o modo), retoma de onde estava em vez de voltar ao início.
+  const lastTimeRef = useRef(0);
+  const lastTrackIdRef = useRef(null);
+  const trackId = currentTrack?.id ?? currentTrack?.webpage_url ?? currentTrack?.url ?? null;
+
+  const handleAudioLoadedMetadata = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (lastTrackIdRef.current === trackId && lastTimeRef.current > 1) {
+      audio.currentTime = lastTimeRef.current;
+      if (isPlaying) audio.play().catch(() => {});
+    } else {
+      lastTrackIdRef.current = trackId;
+      lastTimeRef.current = 0;
+    }
+  };
+
+  const handleAudioEnded = () => {
+    lastTimeRef.current = 0;
+    playNext();
+  };
 
   useEffect(() => {
     if (currentTrack || queue.length > 0) {
@@ -79,7 +126,7 @@ export default function JukeboxPlayer() {
   }, [isPlaying, audioSource]);
 
   useEffect(() => {
-    if (audioRef.current) audioRef.current.volume = volume;
+    if (audioRef.current) audioRef.current.volume = Math.pow(volume, VOLUME_CURVE);
   }, [volume]);
 
   useEffect(() => {
@@ -97,6 +144,7 @@ export default function JukeboxPlayer() {
         playPrevious();
       } else if (e.key === 'm' || e.key === 'M') {
         setVolume((prev) => (prev === 0 ? 1 : 0));
+        flashVolumeBadge();
       }
     };
 
@@ -139,13 +187,20 @@ export default function JukeboxPlayer() {
     };
   }, [isDragging]);
 
-  const handleVolumeWheel = (e) => {
-    e.preventDefault();
-    setVolume((prev) => {
-      const delta = e.deltaY < 0 ? 0.05 : -0.05;
-      return Math.min(1, Math.max(0, parseFloat((prev + delta).toFixed(2))));
-    });
-  };
+  // Roda do mouse: 2% por "clique" do mouse, 1% em touchpad (eventos pequenos).
+  // Listener nativo com passive:false, porque o onWheel do React é passivo e ignora preventDefault().
+  const hasMedia = !!currentTrack || queue.length > 0;
+  useEffect(() => {
+    const el = volumeBoxRef.current;
+    if (!el) return;
+    const onWheel = (e) => {
+      e.preventDefault();
+      const step = Math.abs(e.deltaY) >= 50 ? 0.02 : 0.01;
+      changeVolume(e.deltaY < 0 ? step : -step);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [isVisible, hasMedia]);
 
   const handleVideoClick = (e) => {
     e.stopPropagation();
@@ -186,10 +241,14 @@ export default function JukeboxPlayer() {
   };
 
   const handleTimeUpdate = () => {
-    if (audioRef.current) {
-      setProgress(audioRef.current.currentTime);
-      setDuration(audioRef.current.duration || 0);
+    const audio = audioRef.current;
+    if (!audio) return;
+    // readyState >= 1 evita gravar o "0" que o navegador dispara ao trocar o src
+    if (audio.readyState >= 1 && audio.currentTime > 0) {
+      lastTimeRef.current = audio.currentTime;
     }
+    setProgress(audio.currentTime);
+    setDuration(audio.duration || 0);
   };
 
   const handleSeek = (e) => {
@@ -267,7 +326,9 @@ export default function JukeboxPlayer() {
             ref={audioRef}
             src={audioSource}
             onTimeUpdate={handleTimeUpdate}
-            onEnded={playNext}
+            onLoadedMetadata={handleAudioLoadedMetadata}
+            onLoadStart={() => console.debug('[Jukebox] <audio> (re)carregou:', String(audioSource).slice(0, 80))} // DIAGNÓSTICO: remova depois
+            onEnded={handleAudioEnded}
             style={{ display: 'none' }}
           />
         )}
@@ -389,22 +450,46 @@ export default function JukeboxPlayer() {
           </div>
 
           {/* Controlo de Volume com stopPropagation */}
-          <div 
+          <div
+            ref={volumeBoxRef}
             onClick={(e) => e.stopPropagation()}
-            onWheel={handleVolumeWheel}
-            title="Rode a roda do rato para ajustar o volume"
-            style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'ns-resize' }}
+            title="Roda do mouse: ±2% (touchpad: ±1%) • Arraste para ajustar"
+            style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'ns-resize' }}
           >
-            <span style={{ fontSize: '12px' }}>{volume === 0 ? '🔇' : '🔊'}</span>
-            <input 
-              type="range" 
-              min="0" 
-              max="1" 
-              step="0.05" 
-              value={volume} 
-              onChange={(e) => setVolume(parseFloat(e.target.value))} 
-              style={{ width: isCompact ? '38px' : '45px', accentColor: '#008891', cursor: 'pointer' }} 
+            {/* Badge flutuante (modo compacto, onde não há espaço para o texto fixo) */}
+            {isCompact && volumeBadge && (
+              <div style={{
+                position: 'absolute', bottom: '100%', right: 0, marginBottom: '6px',
+                backgroundColor: '#008891', color: '#fff', fontSize: '11px', fontWeight: 'bold',
+                padding: '2px 6px', borderRadius: '6px', pointerEvents: 'none', whiteSpace: 'nowrap',
+                fontVariantNumeric: 'tabular-nums'
+              }}>
+                {Math.round(volume * 100)}%
+              </div>
+            )}
+
+            <span style={{ fontSize: '12px' }}>
+              {volume === 0 ? '🔇' : volume < 0.5 ? '🔉' : '🔊'}
+            </span>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={volume}
+              aria-label="Volume"
+              aria-valuetext={`${Math.round(volume * 100)}%`}
+              onChange={(e) => {
+                setVolume(clampVolume(parseFloat(e.target.value)));
+                flashVolumeBadge();
+              }}
+              style={{ width: isCompact ? '52px' : '90px', accentColor: '#008891', cursor: 'pointer' }}
             />
+            {!isCompact && (
+              <span style={{ fontSize: '11px', color: '#94a3b8', width: '34px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                {Math.round(volume * 100)}%
+              </span>
+            )}
           </div>
 
           {!isCompact && (

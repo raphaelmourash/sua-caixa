@@ -3,7 +3,9 @@ import { useEffect, useRef, useCallback } from "react";
 const DRIFT_HARD = 0.35;
 const DRIFT_SOFT = 0.08;
 
-export function useSyncedAV(isVideoMode) {
+// audioSource: quando o <audio> só aparece depois (faixa carregada), o efeito precisa rodar de novo
+// para registrar os listeners no elemento recém-criado.
+export function useSyncedAV(isVideoMode, audioSource) {
   const audioRef = useRef(null);
   const videoRef = useRef(null);
 
@@ -69,7 +71,7 @@ export function useSyncedAV(isVideoMode) {
       a.removeEventListener("ratechange", onRate);
       a.removeEventListener("timeupdate", syncVideo);
     };
-  }, [syncVideo, isVideoMode]);
+  }, [syncVideo, isVideoMode, audioSource]);
 
   return { audioRef, videoRef, handleVideoLoaded };
 }
