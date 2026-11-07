@@ -22,54 +22,123 @@ export function JukeboxProvider({ children }) {
   // Cache das URLs resolvidas por faixa: a URL do ÁUDIO nunca muda enquanto a faixa toca,
   // senão o <audio> recarrega e a música reinicia do começo.
   const streamCache = useRef(new Map());
+  const pendingRef = useRef(new Map());   // resoluções em andamento (evita chamar o yt-dlp 2x pela mesma faixa)
+  const shownKeyRef = useRef(null);       // faixa atualmente exibida
+  const [isResolving, setIsResolving] = useState(false);
 
-  // Resolve a stream via yt-dlp (com cache por faixa)
+  // Lê do cache de forma síncrona (sem await = sem delay). Devolve null se faltar algo.
+  const getCached = (url, wantVideo) => {
+    const entry = streamCache.current.get(url);
+    if (!entry || Date.now() - entry.at > STREAM_TTL_MS) return null;
+    if (wantVideo && !entry.video) return null;
+    return entry;
+  };
+
+  // Resolve via yt-dlp, juntando chamadas iguais e guardando no cache.
+  // A URL do áudio de uma faixa já em cache nunca é trocada (só o vídeo é acrescentado).
+  const resolveEntry = (url, wantVideo) => {
+    const cached = getCached(url, wantVideo);
+    if (cached) return Promise.resolve(cached);
+
+    const pkey = `${url}|${wantVideo ? 'v' : 'a'}`;
+    let promise = pendingRef.current.get(pkey);
+    if (!promise) {
+      promise = (async () => {
+        const res = toStreams(await getStreamUrl(url, '', wantVideo));
+        const cache = streamCache.current;
+        const cur = cache.get(url);
+        let next;
+        if (cur && Date.now() - cur.at <= STREAM_TTL_MS) {
+          next = { ...cur, video: res.video ?? cur.video };
+        } else {
+          if (!res.audio) throw new Error('Stream sem áudio');
+          next = { ...res, at: Date.now() };
+        }
+        cache.set(url, next);
+        if (cache.size > 50) cache.delete(cache.keys().next().value);
+        return next;
+      })().finally(() => pendingRef.current.delete(pkey));
+      pendingRef.current.set(pkey, promise);
+    }
+    return promise;
+  };
+
+  // Mostra a faixa atual. Com cache = instantâneo; sem cache = mostra título/capa na hora
+  // e toca assim que o stream resolver.
   useEffect(() => {
     const track = queue[currentIndex];
     if (!track) {
+      shownKeyRef.current = null;
       setCurrentTrack(null);
+      setIsResolving(false);
       return;
     }
 
-    const targetUrl = track.webpage_url || track.url;
+    const url = track.webpage_url || track.url;
     let cancelled = false;
 
-    async function resolveStream() {
-      try {
-        const cache = streamCache.current;
-        let entry = cache.get(targetUrl);
-        if (entry && Date.now() - entry.at > STREAM_TTL_MS) entry = null;
+    const apply = (entry) => {
+      shownKeyRef.current = url;
+      setCurrentTrack({
+        ...track,
+        streamUrl: { audio: entry.audio, video: isVideoMode ? entry.video : null },
+      });
+    };
 
-        if (!entry) {
-          // Primeira resolução da faixa (ou URL expirada)
-          const res = toStreams(await getStreamUrl(targetUrl, '', isVideoMode));
-          if (!res.audio) throw new Error('Stream sem áudio');
-          entry = { ...res, at: Date.now() };
-        } else if (isVideoMode && !entry.video) {
-          // Já temos o áudio: busca só o vídeo e MANTÉM a URL do áudio (não reinicia a música)
-          const res = toStreams(await getStreamUrl(targetUrl, '', true));
-          entry = { ...entry, video: res.video };
-        }
-
-        cache.set(targetUrl, entry);
-        if (cache.size > 50) cache.delete(cache.keys().next().value);
-        if (cancelled) return;
-
-        setCurrentTrack({
-          ...track,
-          streamUrl: { audio: entry.audio, video: isVideoMode ? entry.video : null },
-        });
-      } catch (err) {
-        console.error("Erro ao resolver stream via yt-dlp:", err);
-        if (!cancelled) setCurrentTrack({ ...track, streamUrl: targetUrl });
-      }
+    const cached = getCached(url, isVideoMode);
+    if (cached) {
+      apply(cached);
+      setIsResolving(false);
+      return;
     }
 
-    resolveStream();
+    const isNewTrack = shownKeyRef.current !== url;
+    if (isNewTrack) {
+      // feedback imediato: troca título/capa e para o áudio antigo enquanto carrega
+      shownKeyRef.current = url;
+      setCurrentTrack({ ...track, streamUrl: null });
+      setIsResolving(true);
+    }
+
+    resolveEntry(url, isVideoMode)
+      .then((entry) => {
+        if (cancelled) return;
+        apply(entry);
+        setIsResolving(false);
+      })
+      .catch((err) => {
+        console.error("Erro ao resolver stream via yt-dlp:", err);
+        if (cancelled) return;
+        setCurrentTrack({ ...track, streamUrl: url });
+        setIsResolving(false);
+      });
+
     return () => {
-      cancelled = true; // descarta respostas antigas (troca rápida de faixa/modo)
+      cancelled = true; // descarta respostas antigas (cliques rápidos em avançar/voltar)
     };
   }, [currentIndex, queue, isVideoMode]);
+
+  // 🚀 Pré-carrega a próxima e a anterior em segundo plano: avançar/voltar fica instantâneo
+  useEffect(() => {
+    if (!currentTrack?.streamUrl) return; // só depois que a faixa atual já resolveu
+    let cancelled = false;
+    const neighbours = [queue[currentIndex + 1], queue[currentIndex - 1]].filter(Boolean);
+
+    (async () => {
+      for (const t of neighbours) {
+        if (cancelled) return;
+        try {
+          await resolveEntry(t.webpage_url || t.url, isVideoMode);
+        } catch {
+          /* pré-carga é só otimização: falhas são ignoradas */
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentTrack, queue, currentIndex, isVideoMode]);
 
   // Adiciona faixas à fila existente
   const addToQueue = (tracks) => {
@@ -175,6 +244,7 @@ export function JukeboxProvider({ children }) {
         isPlaying,
         currentIndex,
         isVideoMode,
+        isResolving,
         addToQueue,
         setQueueAndPlay,
         removeFromQueue,

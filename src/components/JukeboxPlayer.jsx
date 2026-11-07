@@ -21,6 +21,7 @@ export default function JukeboxPlayer() {
     queue, 
     currentIndex,
     isVideoMode,
+    isResolving,
     toggleVideoMode
   } = useJukebox();
 
@@ -400,7 +401,7 @@ export default function JukeboxPlayer() {
             )}
             <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
               <span style={{ fontSize: '10px', color: '#06b6d4', fontWeight: 'bold', textTransform: 'uppercase' }}>
-                {isPlaying ? '▶ Tocando' : '⏸ Pausado'}
+                {isResolving ? '⏳ Carregando…' : isPlaying ? '▶ Tocando' : '⏸ Pausado'}
               </span>
               <span style={{ fontSize: '12px', fontWeight: 600, color: '#f8fafc', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isCompact ? '90px' : '240px' }}>
                 {currentTrack ? currentTrack.title || currentTrack.id : 'Nenhuma mídia'}
