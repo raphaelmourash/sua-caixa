@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useDownloads } from '../context/DownloadContext';
 import { useJukebox } from '../context/JukeboxContext';
+import { getAvailableQualities } from '../services/ytdlp';
 
 const formatBytes = (n) => {
   if (!n) return '';
@@ -103,6 +104,54 @@ function KindToggle({ value, onChange, small }) {
   );
 }
 
+function DynamicQualitySelect({ url, value, onChange, small }) {
+  const [qualities, setQualities] = useState(["1080p", "720p", "480p", "360p"]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!url) return;
+    let isMounted = true;
+    setLoading(true);
+    getAvailableQualities(url)
+      .then((res) => {
+        if (isMounted && res && res.length > 0) {
+          setQualities(res);
+        }
+      })
+      .catch((err) => console.error("Erro ao buscar qualidades para download:", err))
+      .finally(() => {
+        if (isMounted) setLoading(false);
+      });
+    return () => { isMounted = false; };
+  }, [url]);
+
+  return (
+    <select
+      value={value ? String(value).replace('p', '') : '1080'}
+      onChange={(e) => onChange(e.target.value)}
+      disabled={loading}
+      aria-label="Qualidade do vídeo"
+      style={{
+        background: '#1e293b', color: '#e2e8f0', border: '1px solid #334155',
+        borderRadius: '6px', padding: small ? '2px 6px' : '4px 8px', fontSize: small ? '11px' : '12px', outline: 'none', cursor: 'pointer',
+      }}
+    >
+      {loading ? (
+        <option value="1080">Carregando...</option>
+      ) : (
+        qualities.map((q) => {
+          const cleanVal = q.replace('p', '');
+          return (
+            <option key={cleanVal} value={cleanVal}>
+              {q}
+            </option>
+          );
+        })
+      )}
+    </select>
+  );
+}
+
 function QualitySelect({ value, onChange, small }) {
   return (
     <select
@@ -124,15 +173,13 @@ function QualitySelect({ value, onChange, small }) {
 
 const small = { fontSize: '11px', padding: '6px 10px' };
 
-// O item guarda a faixa original; se faltar (itens antigos), reconstrói o mínimo para o Jukebox tocar
 const toTrack = (d) => d.track || { title: d.title, webpage_url: d.url, thumbnail: d.thumbnail };
 
-/** onPreview(track): opcional. Sem ele, "Ouvir" toca a fila de downloads a partir do item (como antes). */
 export default function DownloadsPanel({ onPreview }) {
   const api = useDownloads();
   const { setQueueAndPlay } = useJukebox();
   const { downloads, settings } = api;
-  const [selected, setSelected] = useState(() => new Set()); // por id: não se perde quando a lista muda
+  const [selected, setSelected] = useState(() => new Set());
 
   const selectedIds = downloads.filter((d) => selected.has(d.id)).map((d) => d.id);
   const allSelected = downloads.length > 0 && selectedIds.length === downloads.length;
@@ -172,7 +219,6 @@ export default function DownloadsPanel({ onPreview }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
       <div className="card card-bordered" style={{ padding: '20px', margin: 0 }}>
 
-        {/* Cabeçalho da Central: contagem, selecionar todos e ações */}
         <div className="card-header-flex" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
           <span className="card-title card-title-teal" style={{ margin: 0, fontSize: '14px' }}>
             ⬇ FILA DE DOWNLOAD ({downloads.length} {downloads.length === 1 ? 'FAIXA' : 'FAIXAS'})
@@ -198,7 +244,6 @@ export default function DownloadsPanel({ onPreview }) {
           )}
         </div>
 
-        {/* Preferências de download + ações em lote */}
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '14px', marginBottom: '14px', paddingBottom: '12px', borderBottom: '1px solid #1f2937' }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', color: '#94a3b8', fontSize: '12px' }}>
             Formato padrão
@@ -271,7 +316,12 @@ export default function DownloadsPanel({ onPreview }) {
                           <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                             <KindToggle small value={d.kind} onChange={(k) => api.setItemKind(d.id, k)} />
                             {d.kind === 'video' && (
-                              <QualitySelect small value={d.quality} onChange={(q) => api.setItemQuality(d.id, q)} />
+                              <DynamicQualitySelect 
+                                small 
+                                url={d.url} 
+                                value={d.quality} 
+                                onChange={(q) => api.setItemQuality(d.id, q)} 
+                              />
                             )}
                           </div>
                         ) : (

@@ -110,15 +110,59 @@ async fn analyze_playlist(app_handle: tauri::AppHandle, url: String, proxy: Stri
     }
 }
 
+/// 🔍 Inspeciona o vídeo e retorna as alturas (resoluções) reais disponíveis
 #[tauri::command]
-async fn get_stream_url(app_handle: tauri::AppHandle, url: String, proxy: String) -> Result<serde_json::Value, String> {
+async fn get_available_qualities(app_handle: tauri::AppHandle, url: String, proxy: String) -> Result<Vec<u32>, String> {
     let ytdlp_bin = get_ytdlp_executable(&app_handle);
+    let mut cmd = Command::new(ytdlp_bin);
+    
+    let mut args = vec!["--dump-json".to_string(), "--no-playlist".to_string(), url];
+    if !proxy.is_empty() {
+        args.insert(0, proxy);
+        args.insert(0, "--proxy".to_string());
+    }
+
+    let output = cmd.args(&args).output().map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).into());
+    }
+
+    let json_str = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value = serde_json::from_str(&json_str).map_err(|e| e.to_string())?;
+
+    let mut heights = Vec::new();
+    if let Some(formats) = parsed["formats"].as_array() {
+        for f in formats {
+            if let Some(h) = f["height"].as_u64() {
+                let h_u32 = h as u32;
+                if h_u32 >= 144 && !heights.contains(&h_u32) {
+                    heights.push(h_u32);
+                }
+            }
+        }
+    }
+
+    heights.sort_by(|a, b| b.cmp(a));
+    Ok(heights)
+}
+
+#[tauri::command]
+async fn get_stream_url(
+    app_handle: tauri::AppHandle, 
+    url: String, 
+    proxy: String, 
+    _video_mode: bool, 
+    quality: Option<String>
+) -> Result<serde_json::Value, String> {
+    let ytdlp_bin = get_ytdlp_executable(&app_handle);
+    let q = quality.unwrap_or_else(|| "1080".to_string());
 
     // 1. Obtém o stream de áudio puro
     let audio_url = fetch_ytdlp_url(&ytdlp_bin, &url, "ba", &proxy)?;
 
-    // 2. Obtém o stream de vídeo unificado compatível
-    let video_url = fetch_ytdlp_url(&ytdlp_bin, &url, "best[height<=720][ext=mp4]/best[ext=mp4]/best", &proxy).unwrap_or_default();
+    // 2. Obtém o stream de vídeo adaptado à qualidade escolhida (ex: height<=1080)
+    let fmt_video = format!("bv*[height<={q}]+ba/b[height<={q}]/b");
+    let video_url = fetch_ytdlp_url(&ytdlp_bin, &url, &fmt_video, &proxy).unwrap_or_default();
 
     Ok(serde_json::json!({
         "audio": audio_url,
@@ -133,8 +177,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             run_ytdlp,
             analyze_playlist,
+            get_available_qualities,
             get_stream_url,
-            // Comandos essenciais para o progresso, cancelamento e gestão de pastas:
             download::download_with_progress,
             download::cancel_download,
             download::reveal_in_folder

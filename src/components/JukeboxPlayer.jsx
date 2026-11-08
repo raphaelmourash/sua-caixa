@@ -3,6 +3,7 @@ import { useJukebox } from '../context/JukeboxContext';
 import { useDownloads } from '../context/DownloadContext';
 import QueueDrawer from './QueueDrawer';
 import { useSyncedAV } from '../hooks/useSyncedAV';
+import { getAvailableQualities } from '../services/ytdlp';
 
 import SingletonPortal from './SingletonPortal';
 // Curva de volume: 1 = linear; 2 = mais precisão nos volumes baixos (o ouvido percebe em escala logarítmica).
@@ -35,6 +36,37 @@ function JukeboxPlayerInner() {
   const [isCompact, setIsCompact] = useState(false);
   const [isVisible, setIsVisible] = useState(true);
 
+  // Controlo Dinâmico de Qualidade de Execução (Jukebox)
+  const [qualities, setQualities] = useState(["1080p", "720p", "480p", "360p"]);
+  const [selectedQuality, setSelectedQuality] = useState("1080p");
+  const [isQualityOpen, setIsQualityOpen] = useState(false);
+  const [isLoadingQualities, setIsLoadingQualities] = useState(false);
+
+  // Busca qualidades reais do vídeo em segundo plano ao mudar de faixa
+  useEffect(() => {
+    const fetchRealQualities = async () => {
+      const trackUrl = currentTrack?.webpage_url || currentTrack?.url;
+      if (!trackUrl) return;
+
+      setIsLoadingQualities(true);
+      try {
+        const available = await getAvailableQualities(trackUrl);
+        if (available && available.length > 0) {
+          setQualities(available);
+          if (!available.includes(selectedQuality)) {
+            setSelectedQuality(available[0]);
+          }
+        }
+      } catch (err) {
+        console.error("Erro ao buscar resoluções do vídeo:", err);
+      } finally {
+        setIsLoadingQualities(false);
+      }
+    };
+
+    fetchRealQualities();
+  }, [currentTrack]);
+
   // Drag & Drop do Player Flutuante
   const [position, setPosition] = useState({ x: 20, y: window.innerHeight - 190 });
   const [isDragging, setIsDragging] = useState(false);
@@ -44,6 +76,18 @@ function JukeboxPlayerInner() {
   const videoContainerRef = useRef(null);
   const volumeBoxRef = useRef(null);
   const badgeTimerRef = useRef(null);
+  const dropdownRef = useRef(null);
+
+  // Fechar dropdown de qualidade ao clicar fora
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setIsQualityOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Mostra o "65%" por ~1,2s sempre que o volume é mexido
   const flashVolumeBadge = () => {
@@ -155,7 +199,7 @@ function JukeboxPlayerInner() {
   }, [togglePlayPause, playNext, playPrevious]);
 
   const handleMouseDown = (e) => {
-    if (['BUTTON', 'INPUT', 'VIDEO'].includes(e.target.tagName)) return;
+    if (['BUTTON', 'INPUT', 'VIDEO', 'SELECT'].includes(e.target.tagName)) return;
 
     setIsDragging(true);
     dragRef.current = {
@@ -190,7 +234,6 @@ function JukeboxPlayerInner() {
   }, [isDragging]);
 
   // Roda do mouse: 2% por "clique" do mouse, 1% em touchpad (eventos pequenos).
-  // Listener nativo com passive:false, porque o onWheel do React é passivo e ignora preventDefault().
   const hasMedia = !!currentTrack || queue.length > 0;
   useEffect(() => {
     const el = volumeBoxRef.current;
@@ -215,16 +258,17 @@ function JukeboxPlayerInner() {
     }
   };
 
-  // Envia para a Central de Downloads (fica aguardando você confirmar o download lá)
-  const dlState = currentTrack ? getTrackState(currentTrack) : null; // 'busy' | 'waiting' | 'downloaded' | null
+  // Envia para a Central de Downloads com a qualidade selecionada
+  const dlState = currentTrack ? getTrackState(currentTrack) : null; 
   const handleDownloadCurrent = () => {
     if (!currentTrack) return;
+    const qualityHeight = selectedQuality.replace('p', '');
     if (dlState === 'downloaded') {
       if (!window.confirm(`"${currentTrack.title || 'Esta faixa'}" já foi baixada. Baixar de novo?`)) return;
-      enqueueDownload(currentTrack, undefined, { force: true });
+      enqueueDownload(currentTrack, { quality: qualityHeight }, { force: true });
       return;
     }
-    enqueueDownload(currentTrack);
+    enqueueDownload(currentTrack, { quality: qualityHeight });
   };
 
   if ((!currentTrack && queue.length === 0) || !isVisible) return null;
@@ -239,7 +283,6 @@ function JukeboxPlayerInner() {
   const handleTimeUpdate = () => {
     const audio = audioRef.current;
     if (!audio) return;
-    // readyState >= 1 evita gravar o "0" que o navegador dispara ao trocar o src
     if (audio.readyState >= 1 && audio.currentTime > 0) {
       lastTimeRef.current = audio.currentTime;
     }
@@ -280,14 +323,19 @@ function JukeboxPlayerInner() {
           backdropFilter: 'blur(10px)',
           cursor: isDragging ? 'grabbing' : isCompact ? 'pointer' : 'grab',
           transition: isDragging ? 'none' : 'all 0.3s ease',
-          maxWidth: isCompact ? '350px' : '760px',
-          width: isCompact ? '350px' : '760px'
+          maxWidth: isCompact ? '350px' : '840px',
+          width: isCompact ? '350px' : '840px'
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '6px', marginBottom: '2px' }}>
-          <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#008891', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-            🎵 Jukebox Player
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#008891', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              🎵 Jukebox Player
+            </span>
+            <span style={{ fontSize: '9px', padding: '1px 5px', borderRadius: '4px', backgroundColor: '#1e293b', color: '#38bdf8', fontWeight: 'bold' }}>
+              {selectedQuality}
+            </span>
+          </div>
 
           <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
             <button 
@@ -323,7 +371,7 @@ function JukeboxPlayerInner() {
             src={audioSource}
             onTimeUpdate={handleTimeUpdate}
             onLoadedMetadata={handleAudioLoadedMetadata}
-            onLoadStart={() => console.debug('[Jukebox] <audio> (re)carregou:', String(audioSource).slice(0, 80))} // DIAGNÓSTICO: remova depois
+            onLoadStart={() => console.debug('[Jukebox] <audio> (re)carregou:', String(audioSource).slice(0, 80))}
             onEnded={handleAudioEnded}
             style={{ display: 'none' }}
           />
@@ -398,7 +446,7 @@ function JukeboxPlayerInner() {
               <span style={{ fontSize: '10px', color: '#06b6d4', fontWeight: 'bold', textTransform: 'uppercase' }}>
                 {isResolving ? '⏳ Carregando…' : isPlaying ? '▶ Tocando' : '⏸ Pausado'}
               </span>
-              <span style={{ fontSize: '12px', fontWeight: 600, color: '#f8fafc', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isCompact ? '90px' : '240px' }}>
+              <span style={{ fontSize: '12px', fontWeight: 600, color: '#f8fafc', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isCompact ? '90px' : '200px' }}>
                 {currentTrack ? currentTrack.title || currentTrack.id : 'Nenhuma mídia'}
               </span>
             </div>
@@ -452,7 +500,6 @@ function JukeboxPlayerInner() {
             title="Roda do mouse: ±2% (touchpad: ±1%) • Arraste para ajustar"
             style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'ns-resize' }}
           >
-            {/* Badge flutuante (modo compacto, onde não há espaço para o texto fixo) */}
             {isCompact && volumeBadge && (
               <div style={{
                 position: 'absolute', bottom: '100%', right: 0, marginBottom: '6px',
@@ -479,7 +526,7 @@ function JukeboxPlayerInner() {
                 setVolume(clampVolume(parseFloat(e.target.value)));
                 flashVolumeBadge();
               }}
-              style={{ width: isCompact ? '52px' : '90px', accentColor: '#008891', cursor: 'pointer' }}
+              style={{ width: isCompact ? '52px' : '75px', accentColor: '#008891', cursor: 'pointer' }}
             />
             {!isCompact && (
               <span style={{ fontSize: '11px', color: '#94a3b8', width: '34px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
@@ -489,7 +536,49 @@ function JukeboxPlayerInner() {
           </div>
 
           {!isCompact && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              {/* Seletor de Qualidade Profissional Dinâmico */}
+              <div ref={dropdownRef} style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
+                <button
+                  onClick={() => !isLoadingQualities && setIsQualityOpen(!isQualityOpen)}
+                  className="btn btn-dark btn-sm"
+                  style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', padding: '4px 8px', backgroundColor: '#1e293b', borderColor: '#334155' }}
+                  title="Selecionar qualidade de execução / download"
+                >
+                  <span style={{ fontWeight: '600' }}>{isLoadingQualities ? '⏳ A carregar...' : selectedQuality}</span>
+                  <span style={{ fontSize: '8px', transition: 'transform 0.2s', transform: isQualityOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>▼</span>
+                </button>
+
+                {isQualityOpen && !isLoadingQualities && (
+                  <div style={{
+                    position: 'absolute', bottom: '100%', right: 0, marginBottom: '6px',
+                    backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '8px',
+                    boxShadow: '0 10px 25px rgba(0,0,0,0.6)', overflow: 'hidden', zIndex: 120, minWidth: '85px'
+                  }}>
+                    {qualities.map((q) => (
+                      <button
+                        key={q}
+                        onClick={() => {
+                          setSelectedQuality(q);
+                          setIsQualityOpen(false);
+                        }}
+                        style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                          width: '100%', padding: '7px 10px', fontSize: '11px', border: 'none',
+                          backgroundColor: selectedQuality === q ? '#008891' : 'transparent',
+                          color: selectedQuality === q ? '#ffffff' : '#cbd5e1', cursor: 'pointer',
+                          fontWeight: selectedQuality === q ? 'bold' : 'normal',
+                          transition: 'background-color 0.15s'
+                        }}
+                      >
+                        <span>{q}</span>
+                        {selectedQuality === q && <span style={{ fontSize: '10px' }}>✓</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <button
                 onClick={handleDownloadCurrent}
                 disabled={dlState === 'busy'}
@@ -521,7 +610,6 @@ function JukeboxPlayerInner() {
   );
 }
 
-// Uma só instância na tela (mesmo que o componente seja montado mais de uma vez) e fora de abas ocultas
 export default function JukeboxPlayer() {
   return (
     <SingletonPortal>

@@ -1,3 +1,4 @@
+// src/services/ytdlp.js
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
@@ -16,12 +17,25 @@ export async function analyzePlaylist(url, proxy = '') {
   }
 }
 
-export async function getStreamUrl(videoUrl, proxy = '', videoMode = false) {
+/** 🔍 Obtém as resoluções reais disponíveis no YouTube para o vídeo */
+export async function getAvailableQualities(videoUrl, proxy = '') {
+  try {
+    const heights = await invoke('get_available_qualities', { url: videoUrl, proxy });
+    if (!heights || heights.length === 0) return ["1080p", "720p", "480p", "360p"];
+    return heights.map(h => `${h}p`);
+  } catch (error) {
+    console.error('Erro ao obter qualidades disponíveis:', error);
+    return ["1080p", "720p", "480p", "360p"]; // Fallback padrão caso falhe
+  }
+}
+
+export async function getStreamUrl(videoUrl, proxy = '', videoMode = false, quality = '1080') {
   try {
     const streamUrl = await invoke('get_stream_url', {
       url: videoUrl,
       proxy,
-      videoMode
+      videoMode,
+      quality: String(quality).replace('p', '')
     });
     return streamUrl;
   } catch (error) {
@@ -44,7 +58,14 @@ export async function runYtdlp(url, proxy = '') {
 
 /** Inicia um download. O progresso chega pelo evento "download-progress" (veja onDownloadProgress). */
 export async function startDownload({ id, url, kind = 'audio', quality = '1080', outDir = '', proxy = '' }) {
-  return invoke('download_with_progress', { id, url, kind, quality, outDir, proxy });
+  return invoke('download_with_progress', { 
+    id, 
+    url, 
+    kind, 
+    quality: String(quality).replace('p', ''), 
+    outDir, 
+    proxy 
+  });
 }
 
 /** Escuta o progresso de todos os downloads. Devolve (via Promise) a função para cancelar a escuta. */
