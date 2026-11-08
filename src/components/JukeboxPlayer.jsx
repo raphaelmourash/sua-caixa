@@ -4,6 +4,7 @@ import { useDownloads } from '../context/DownloadContext';
 import QueueDrawer from './QueueDrawer';
 import { useSyncedAV } from '../hooks/useSyncedAV';
 
+import SingletonPortal from './SingletonPortal';
 // Curva de volume: 1 = linear; 2 = mais precisão nos volumes baixos (o ouvido percebe em escala logarítmica).
 // O número exibido continua de 0 a 100%.
 const VOLUME_CURVE = 2;
@@ -11,7 +12,7 @@ const VOLUME_CURVE = 2;
 // Mantém o volume em passos de 1% (evita lixo de ponto flutuante como 0.30000000000000004)
 const clampVolume = (v) => Math.min(1, Math.max(0, Math.round(v * 100) / 100));
 
-export default function JukeboxPlayer() {
+function JukeboxPlayerInner() {
   const { 
     currentTrack, 
     isPlaying, 
@@ -30,7 +31,7 @@ export default function JukeboxPlayer() {
   const [volume, setVolume] = useState(1);
   const [volumeBadge, setVolumeBadge] = useState(false);
   const [isQueueOpen, setIsQueueOpen] = useState(false);
-  const { enqueueDownload, isDownloadingTrack } = useDownloads();
+  const { enqueueDownload, getTrackState } = useDownloads();
   const [isCompact, setIsCompact] = useState(false);
   const [isVisible, setIsVisible] = useState(true);
 
@@ -214,12 +215,17 @@ export default function JukeboxPlayer() {
     }
   };
 
-  // Envia para a fila de downloads; o progresso aparece na barra de cada item (DownloadsPanel)
+  // Envia para a Central de Downloads (fica aguardando você confirmar o download lá)
+  const dlState = currentTrack ? getTrackState(currentTrack) : null; // 'busy' | 'waiting' | 'downloaded' | null
   const handleDownloadCurrent = () => {
     if (!currentTrack) return;
-    enqueueDownload(currentTrack, 'audio');
+    if (dlState === 'downloaded') {
+      if (!window.confirm(`"${currentTrack.title || 'Esta faixa'}" já foi baixada. Baixar de novo?`)) return;
+      enqueueDownload(currentTrack, undefined, { force: true });
+      return;
+    }
+    enqueueDownload(currentTrack);
   };
-  const isDownloading = currentTrack ? isDownloadingTrack(currentTrack) : false;
 
   if ((!currentTrack && queue.length === 0) || !isVisible) return null;
 
@@ -484,8 +490,14 @@ export default function JukeboxPlayer() {
 
           {!isCompact && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <button onClick={handleDownloadCurrent} disabled={isDownloading} className="btn btn-dark btn-sm" style={{ backgroundColor: '#0284c7', color: '#fff', fontSize: '11px' }}>
-                {isDownloading ? '⬇ Baixando…' : '⬇ Baixar'}
+              <button
+                onClick={handleDownloadCurrent}
+                disabled={dlState === 'busy'}
+                className="btn btn-dark btn-sm"
+                title={dlState === 'waiting' ? 'Já está na Central, aguardando você' : 'Enviar para a Central de Downloads'}
+                style={{ backgroundColor: dlState === 'downloaded' ? '#15803d' : '#0284c7', color: '#fff', fontSize: '11px' }}
+              >
+                {dlState === 'busy' ? '⬇ Baixando…' : dlState === 'waiting' ? '⏳ Na Central' : dlState === 'downloaded' ? '✓ Baixada' : '⬇ Baixar'}
               </button>
               
               <button onClick={() => setIsQueueOpen(true)} className="btn btn-dark btn-sm" style={{ fontSize: '11px', backgroundColor: '#1e293b' }}>
@@ -506,5 +518,14 @@ export default function JukeboxPlayer() {
 
       <QueueDrawer isOpen={isQueueOpen} onClose={() => setIsQueueOpen(false)} />
     </>
+  );
+}
+
+// Uma só instância na tela (mesmo que o componente seja montado mais de uma vez) e fora de abas ocultas
+export default function JukeboxPlayer() {
+  return (
+    <SingletonPortal>
+      <JukeboxPlayerInner />
+    </SingletonPortal>
   );
 }

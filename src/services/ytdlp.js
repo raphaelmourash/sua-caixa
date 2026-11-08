@@ -43,11 +43,21 @@ export async function runYtdlp(url, proxy = '') {
 // ---------- Download com progresso em tempo real ----------
 
 /** Inicia um download. O progresso chega pelo evento "download-progress" (veja onDownloadProgress). */
-export async function startDownload({ id, url, kind = 'audio', outDir = '', proxy = '' }) {
-  return invoke('download_with_progress', { id, url, kind, outDir, proxy });
+export async function startDownload({ id, url, kind = 'audio', quality = '1080', outDir = '', proxy = '' }) {
+  return invoke('download_with_progress', { id, url, kind, quality, outDir, proxy });
 }
 
 /** Escuta o progresso de todos os downloads. Devolve (via Promise) a função para cancelar a escuta. */
 export function onDownloadProgress(callback) {
   return listen('download-progress', (event) => callback(event.payload));
+}
+
+/** Cancela (removePartial=true, apaga os parciais) ou PAUSA (removePartial=false) um download em andamento. */
+export async function cancelDownload(id, removePartial = true) {
+  return invoke('cancel_download', { id, removePartial });
+}
+
+/** Abre a pasta do arquivo baixado já selecionando o arquivo. */
+export async function revealInFolder(path) {
+  return invoke('reveal_in_folder', { path });
 }

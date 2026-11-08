@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 
 /**
  * Abas "autoexplicativas": cada seção mostra ícone, título, uma linha dizendo o que ela faz
@@ -22,6 +22,17 @@ export default function SectionTabs({ sections, defaultId, storageKey = 'suacaix
     try { localStorage.setItem(storageKey, id); } catch { /* ignora */ }
     if (onChange) onChange(id);
   }, [storageKey, onChange]);
+
+  // Outras partes do app podem pedir uma aba: window.dispatchEvent(new CustomEvent('suacaixa:abrir-aba', { detail: 'downloads' }))
+  const sectionsRef = useRef(sections);
+  sectionsRef.current = sections;
+  useEffect(() => {
+    const handler = (e) => {
+      if (sectionsRef.current.some((s) => s.id === e.detail)) select(e.detail);
+    };
+    window.addEventListener('suacaixa:abrir-aba', handler);
+    return () => window.removeEventListener('suacaixa:abrir-aba', handler);
+  }, [select]);
 
   const onKeyDown = (e, index) => {
     const n = sections.length;

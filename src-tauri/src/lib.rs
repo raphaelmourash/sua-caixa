@@ -1,6 +1,9 @@
 use std::process::Command;
 use tauri::Manager;
 
+// Declara o módulo download.rs que gere o progresso e cancelamento
+mod download;
+
 // Localiza o executável do yt-dlp no ambiente Tauri ou no sistema
 fn get_ytdlp_executable(app_handle: &tauri::AppHandle) -> String {
     if let Ok(path) = app_handle.path().resolve("bin/yt-dlp.exe", tauri::path::BaseDirectory::Resource) {
@@ -111,10 +114,10 @@ async fn analyze_playlist(app_handle: tauri::AppHandle, url: String, proxy: Stri
 async fn get_stream_url(app_handle: tauri::AppHandle, url: String, proxy: String) -> Result<serde_json::Value, String> {
     let ytdlp_bin = get_ytdlp_executable(&app_handle);
 
-    // 1. Obtém o stream de áudio puro (relógio mestre)
+    // 1. Obtém o stream de áudio puro
     let audio_url = fetch_ytdlp_url(&ytdlp_bin, &url, "ba", &proxy)?;
 
-    // 2. Obtém o stream de vídeo unificado compatível (evita ecrã preto no leitor HTML5)
+    // 2. Obtém o stream de vídeo unificado compatível
     let video_url = fetch_ytdlp_url(&ytdlp_bin, &url, "best[height<=720][ext=mp4]/best[ext=mp4]/best", &proxy).unwrap_or_default();
 
     Ok(serde_json::json!({
@@ -127,7 +130,15 @@ async fn get_stream_url(app_handle: tauri::AppHandle, url: String, proxy: String
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![run_ytdlp, analyze_playlist, get_stream_url])
+        .invoke_handler(tauri::generate_handler![
+            run_ytdlp,
+            analyze_playlist,
+            get_stream_url,
+            // Comandos essenciais para o progresso, cancelamento e gestão de pastas:
+            download::download_with_progress,
+            download::cancel_download,
+            download::reveal_in_folder
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

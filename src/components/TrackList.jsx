@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { useJukebox } from '../context/JukeboxContext';
-import { runYtdlp } from '../services/ytdlp';
+import { useDownloads, getVideoId } from '../context/DownloadContext';
 
 export default function TrackList({ tracks, setTracks }) {
   const { addToQueue, setQueueAndPlay } = useJukebox();
   const [selectedTracks, setSelectedTracks] = useState([]);
-  const [downloadingIdx, setDownloadingIdx] = useState(null);
+  const { enqueueDownload, enqueueMany, getTrackState } = useDownloads();
 
   // Estados para os painéis de salvamento no fundo
   const [playlistName, setPlaylistName] = useState('');
@@ -50,21 +50,20 @@ export default function TrackList({ tracks, setTracks }) {
     }
   };
 
-  const handleDownload = async (track, idx) => {
-    const targetUrl = track.webpage_url || track.url;
-    if (!targetUrl) return;
-
-    setDownloadingIdx(idx);
-    try {
-      alert(`A iniciar download: ${getDisplayTitle(track, idx)}`);
-      await runYtdlp(targetUrl);
-      alert('Download concluído com sucesso!');
-    } catch (err) {
-      console.error('Erro no download:', err);
-      alert('Erro ao descarregar a faixa.');
-    } finally {
-      setDownloadingIdx(null);
+  // Envia para a Central de Downloads (progresso, fila, pausar e cancelar ficam lá)
+  const handleDownload = (track, idx) => {
+    if (!(track.webpage_url || track.url)) return;
+    const item = { ...track, title: getDisplayTitle(track, idx) };
+    if (getTrackState(track) === 'downloaded') {
+      if (!window.confirm(`"${item.title}" já foi baixada. Baixar de novo?`)) return;
+      enqueueDownload(item, undefined, { force: true });
+      return;
     }
+    enqueueDownload(item);
+  };
+
+  const handleDownloadSelected = () => {
+    enqueueMany(selectedTracks.map((i) => ({ ...tracks[i], title: getDisplayTitle(tracks[i], i) })));
   };
 
   const handleSaveNewPlaylist = async () => {
@@ -74,8 +73,13 @@ export default function TrackList({ tracks, setTracks }) {
     }
 
     const savedPlaylists = JSON.parse(localStorage.getItem('nexus_local_playlists') || '{}');
-    
-    savedPlaylists[playlistName] = {
+    const name = playlistName.trim();
+
+    if (savedPlaylists[name] && !window.confirm(`Já existe uma playlist chamada "${name}". Substituir? (as faixas atuais dela serão perdidas)`)) {
+      return;
+    }
+
+    savedPlaylists[name] = {
       folder: artistName.trim() || 'Geral',
       album: albumName.trim() || 'Singles / Catálogo',
       artist: artistName.trim() || 'Vários Artistas',
@@ -85,7 +89,7 @@ export default function TrackList({ tracks, setTracks }) {
 
     localStorage.setItem('nexus_local_playlists', JSON.stringify(savedPlaylists));
     window.dispatchEvent(new Event('storage'));
-    alert(`Playlist "${playlistName}" guardada com sucesso!`);
+    alert(`Playlist "${name}" guardada com sucesso!`);
   };
 
   const handleAddToExistingPlaylist = () => {
@@ -100,7 +104,12 @@ export default function TrackList({ tracks, setTracks }) {
     if (!target) return;
 
     const currentTracks = Array.isArray(target) ? target : (target.tracks || []);
-    const updatedTracks = [...currentTracks, ...tracks];
+    // não repete faixas que já estão na playlist (compara pelo ID do vídeo)
+    const keyOf = (t) => getVideoId(t) || t.webpage_url || t.url || t.id;
+    const existingKeys = new Set(currentTracks.map(keyOf));
+    const fresh = tracks.filter((t) => !existingKeys.has(keyOf(t)));
+    const skipped = tracks.length - fresh.length;
+    const updatedTracks = [...currentTracks, ...fresh];
 
     savedPlaylists[existingPlaylist] = {
       ...(typeof target === 'object' ? target : {}),
@@ -109,7 +118,7 @@ export default function TrackList({ tracks, setTracks }) {
 
     localStorage.setItem('nexus_local_playlists', JSON.stringify(savedPlaylists));
     window.dispatchEvent(new Event('storage'));
-    alert(`Faixas adicionadas a "${existingPlaylist}" com sucesso!`);
+    alert(`${fresh.length} faixa(s) adicionada(s) a "${existingPlaylist}"${skipped ? ` (${skipped} já estavam na playlist)` : ''}.`);
   };
 
   const existingNames = Object.keys(JSON.parse(localStorage.getItem('nexus_local_playlists') || '{}'));
@@ -135,6 +144,17 @@ export default function TrackList({ tracks, setTracks }) {
               />
               Selecionar Todos
             </label>
+
+            {selectedTracks.length > 0 && (
+              <button
+                onClick={handleDownloadSelected}
+                className="btn btn-dark btn-sm"
+                style={{ backgroundColor: '#0284c7', color: '#fff' }}
+                title="Envia as faixas marcadas para a Central de Downloads"
+              >
+                ⬇ Baixar selecionadas ({selectedTracks.length})
+              </button>
+            )}
 
             <button
               onClick={() => {
@@ -162,6 +182,7 @@ export default function TrackList({ tracks, setTracks }) {
         <div className="playlist-tracks" style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '320px', overflowY: 'auto', paddingRight: '4px' }}>
           {tracks.map((track, idx) => {
             const displayTitle = getDisplayTitle(track, idx);
+            const dlState = getTrackState(track); // 'busy' | 'waiting' | 'downloaded' | null
 
             return (
               <div key={idx} className="playlist-track-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', backgroundColor: '#0b0f19', border: '1px solid #1f2937', borderRadius: '8px' }}>
@@ -179,11 +200,12 @@ export default function TrackList({ tracks, setTracks }) {
                 <div className="track-actions" style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
                   <button
                     onClick={() => handleDownload(track, idx)}
-                    disabled={downloadingIdx === idx}
+                    disabled={dlState === 'busy'}
                     className="btn btn-dark btn-sm"
-                    style={{ backgroundColor: '#0284c7', color: '#fff', fontSize: '11px', padding: '4px 10px' }}
+                    title={dlState === 'downloaded' ? 'Já baixada: clique para baixar de novo' : 'Enviar para a Central de Downloads'}
+                    style={{ backgroundColor: dlState === 'downloaded' ? '#15803d' : '#0284c7', color: '#fff', fontSize: '11px', padding: '4px 10px' }}
                   >
-                    {downloadingIdx === idx ? '⬇ A baixar...' : '⬇ Baixar'}
+                    {dlState === 'busy' ? '⬇ Baixando…' : dlState === 'waiting' ? '⏳ Na Central' : dlState === 'downloaded' ? '✓ Baixada' : '⬇ Baixar'}
                   </button>
                   <button
                     onClick={() => setQueueAndPlay(tracks, idx)}
