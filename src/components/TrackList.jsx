@@ -7,7 +7,10 @@ export default function TrackList({ tracks, setTracks }) {
   const [selectedTracks, setSelectedTracks] = useState([]);
   const { enqueueDownload, enqueueMany, getTrackState } = useDownloads();
 
-  // Estados para os painéis de salvamento no fundo
+  // Estado para controlar a expansão do painel de salvamento
+  const [isSavePanelOpen, setIsSavePanelOpen] = useState(false);
+
+  // Estados para os formulários de salvamento
   const [playlistName, setPlaylistName] = useState('');
   const [artistName, setArtistName] = useState('');
   const [albumName, setAlbumName] = useState('');
@@ -50,7 +53,6 @@ export default function TrackList({ tracks, setTracks }) {
     }
   };
 
-  // Envia para a Central de Downloads (progresso, fila, pausar e cancelar ficam lá)
   const handleDownload = (track, idx) => {
     if (!(track.webpage_url || track.url)) return;
     const item = { ...track, title: getDisplayTitle(track, idx) };
@@ -104,7 +106,6 @@ export default function TrackList({ tracks, setTracks }) {
     if (!target) return;
 
     const currentTracks = Array.isArray(target) ? target : (target.tracks || []);
-    // não repete faixas que já estão na playlist (compara pelo ID do vídeo)
     const keyOf = (t) => getVideoId(t) || t.webpage_url || t.url || t.id;
     const existingKeys = new Set(currentTracks.map(keyOf));
     const fresh = tracks.filter((t) => !existingKeys.has(keyOf(t)));
@@ -132,7 +133,7 @@ export default function TrackList({ tracks, setTracks }) {
       <div className="card card-bordered" style={{ padding: '20px', margin: 0 }}>
         <div className="card-header-flex" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', flexWrap: 'wrap', gap: '10px' }}>
           <span className="card-title card-title-teal" style={{ margin: 0, fontSize: '14px' }}>
-            🎵 Faixas Detetadas ({tracks.length} faixas)
+            🎵 FAIXAS DETETADAS ({tracks.length} FAIXAS)
           </span>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
@@ -182,7 +183,7 @@ export default function TrackList({ tracks, setTracks }) {
         <div className="playlist-tracks" style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '320px', overflowY: 'auto', paddingRight: '4px' }}>
           {tracks.map((track, idx) => {
             const displayTitle = getDisplayTitle(track, idx);
-            const dlState = getTrackState(track); // 'busy' | 'waiting' | 'downloaded' | null
+            const dlState = getTrackState(track);
 
             return (
               <div key={idx} className="playlist-track-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', backgroundColor: '#0b0f19', border: '1px solid #1f2937', borderRadius: '8px' }}>
@@ -230,82 +231,126 @@ export default function TrackList({ tracks, setTracks }) {
         </div>
       </div>
 
-      {/* 2. FUNDO: PAINÉIS DE SALVAMENTO DE PLAYLIST */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '15px' }}>
+      {/* 2. BARRA DE SALVAMENTO DE PLAYLIST (COMPACTA, EXPANSÍVEL E COM PADRÃO AZUL) */}
+      <div className="card card-bordered" style={{ padding: '0', margin: 0, overflow: 'hidden' }}>
         
-        {/* Guardar em Pasta / Banda ou Mix */}
-        <div className="card" style={{ margin: 0 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <span className="card-title" style={{ margin: 0, color: '#38bdf8' }}>
-              📁 Guardar em Pasta / Banda ou Mix
-            </span>
-            <span style={{ fontSize: '11px', color: '#0d9488', backgroundColor: '#0f292a', padding: '2px 8px', borderRadius: '10px' }}>
-              {tracks.length} faixas
-            </span>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <input
-              type="text"
-              placeholder="Nome da playlist (ex: Rock)..."
-              value={playlistName}
-              onChange={(e) => setPlaylistName(e.target.value)}
-              className="input-text"
-            />
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <input
-                type="text"
-                placeholder="Banda / Artista (ex: Oasis)..."
-                value={artistName}
-                onChange={(e) => setArtistName(e.target.value)}
-                className="input-text"
-              />
-              <input
-                type="text"
-                placeholder="Álbum..."
-                value={albumName}
-                onChange={(e) => setAlbumName(e.target.value)}
-                className="input-text"
-              />
-            </div>
-            <input
-              type="text"
-              placeholder="URL da Capa (Opcional)..."
-              value={coverUrl}
-              onChange={(e) => setCoverUrl(e.target.value)}
-              className="input-text"
-            />
-            <button onClick={handleSaveNewPlaylist} className="btn btn-yellow" style={{ width: '100%', fontWeight: 'bold' }}>
-              Guardar Playlist
-            </button>
-          </div>
-        </div>
-
-        {/* Adicionar a Playlist Existente */}
-        <div className="card" style={{ margin: 0 }}>
-          <span className="card-title" style={{ color: '#f59e0b', marginBottom: '12px', display: 'block' }}>
-            ➕ Adicionar a Playlist Existente
+        <button
+          type="button"
+          onClick={() => setIsSavePanelOpen(!isSavePanelOpen)}
+          className="card-title card-title-teal"
+          style={{
+            width: '100%',
+            padding: '12px 16px',
+            background: 'none',
+            border: 'none',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            cursor: 'pointer',
+            outline: 'none',
+            fontSize: '14px',
+            margin: 0,
+            textAlign: 'left'
+          }}
+        >
+          <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            💾 GUARDAR OU ADICIONAR ÀS MINHAS PLAYLISTS ({tracks.length} FAIXAS)
           </span>
+          <span style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 'bold' }}>
+            {isSavePanelOpen ? '▲ Recolher' : '▼ Expandir Opções'}
+          </span>
+        </button>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', justifyContent: 'space-between', height: 'calc(100% - 30px)' }}>
-            <select
-              value={existingPlaylist}
-              onChange={(e) => setExistingPlaylist(e.target.value)}
-              className="select-dropdown"
-            >
-              <option value="">Selecione uma playlist...</option>
-              {existingNames.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
+        {isSavePanelOpen && (
+          <div style={{ padding: '16px', borderTop: '1px solid #1f2937', backgroundColor: '#0b0f19' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', width: '100%', alignItems: 'stretch' }}>
+              
+              {/* Guardar em Pasta / Banda ou Mix */}
+              <div style={{ padding: '14px', backgroundColor: '#111827', border: '1px solid #1f2937', borderRadius: '8px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <span className="card-title card-title-teal" style={{ margin: 0, fontSize: '12px' }}>
+                      📁 GUARDAR EM PASTA / BANDA
+                    </span>
+                  </div>
 
-            <button onClick={handleAddToExistingPlaylist} className="btn btn-teal" style={{ width: '100%', fontWeight: 'bold' }}>
-              Adicionar a Esta Playlist
-            </button>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <input
+                      type="text"
+                      placeholder="Nome da playlist (ex: Rock)..."
+                      value={playlistName}
+                      onChange={(e) => setPlaylistName(e.target.value)}
+                      className="input-text"
+                      style={{ padding: '6px 10px', fontSize: '12px' }}
+                    />
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                      <input
+                        type="text"
+                        placeholder="Banda / Artista..."
+                        value={artistName}
+                        onChange={(e) => setArtistName(e.target.value)}
+                        className="input-text"
+                        style={{ padding: '6px 10px', fontSize: '12px' }}
+                      />
+                      <input
+                        type="text"
+                        placeholder="Álbum..."
+                        value={albumName}
+                        onChange={(e) => setAlbumName(e.target.value)}
+                        className="input-text"
+                        style={{ padding: '6px 10px', fontSize: '12px' }}
+                      />
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="URL da Capa (Opcional)..."
+                      value={coverUrl}
+                      onChange={(e) => setCoverUrl(e.target.value)}
+                      className="input-text"
+                      style={{ padding: '6px 10px', fontSize: '12px' }}
+                    />
+                  </div>
+                </div>
+
+                <button onClick={handleSaveNewPlaylist} className="btn btn-yellow btn-sm" style={{ width: '100%', fontWeight: 'bold', padding: '6px', marginTop: '10px' }}>
+                  Guardar Playlist
+                </button>
+              </div>
+
+              {/* Adicionar a Playlist Existente */}
+              <div style={{ padding: '14px', backgroundColor: '#111827', border: '1px solid #1f2937', borderRadius: '8px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ marginBottom: '10px' }}>
+                    <span className="card-title card-title-teal" style={{ margin: 0, fontSize: '12px', display: 'block' }}>
+                      ➕ ADICIONAR A PLAYLIST EXISTENTE
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', marginTop: '12px' }}>
+                    <select
+                      value={existingPlaylist}
+                      onChange={(e) => setExistingPlaylist(e.target.value)}
+                      className="select-dropdown"
+                      style={{ width: '100%', padding: '8px 10px', fontSize: '12px', height: '36px', cursor: 'pointer' }}
+                    >
+                      <option value="">Selecione uma playlist...</option>
+                      {existingNames.map((name) => (
+                        <option key={name} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <button onClick={handleAddToExistingPlaylist} className="btn btn-teal btn-sm" style={{ width: '100%', fontWeight: 'bold', padding: '6px', marginTop: '10px' }}>
+                  Adicionar a Esta Playlist
+                </button>
+              </div>
+
+            </div>
           </div>
-        </div>
+        )}
 
       </div>
 
