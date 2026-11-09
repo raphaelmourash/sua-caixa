@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useJukebox } from '../context/JukeboxContext';
 import { useDownloads, getVideoId } from '../context/DownloadContext';
 
@@ -7,7 +7,9 @@ export default function TrackList({ tracks, setTracks }) {
   const [selectedTracks, setSelectedTracks] = useState([]);
   const { enqueueDownload, enqueueMany, getTrackState } = useDownloads();
 
-  // Estado para controlar a expansão do painel de salvamento
+  // Estados de busca, ordenação e expansão do painel
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState('original'); // 'original' | 'az' | 'za'
   const [isSavePanelOpen, setIsSavePanelOpen] = useState(false);
 
   // Estados para os formulários de salvamento
@@ -25,24 +27,47 @@ export default function TrackList({ tracks, setTracks }) {
     return `Música ${idx + 1} (${track.id || 'Desconhecida'})`;
   };
 
+  // Filtragem e ordenação dinâmica mantendo o índice original para ações corretas
+  const filteredAndSortedTracks = useMemo(() => {
+    const mapped = tracks.map((track, originalIndex) => ({
+      track,
+      originalIndex,
+      displayTitle: getDisplayTitle(track, originalIndex)
+    }));
+
+    const filtered = mapped.filter(({ displayTitle }) =>
+      displayTitle.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
+    if (sortBy === 'az') {
+      filtered.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
+    } else if (sortBy === 'za') {
+      filtered.sort((a, b) => b.displayTitle.localeCompare(a.displayTitle));
+    }
+
+    return filtered;
+  }, [tracks, searchQuery, sortBy]);
+
   const handleSelectAll = (e) => {
     if (e.target.checked) {
-      setSelectedTracks(tracks.map((_, idx) => idx));
+      setSelectedTracks(filteredAndSortedTracks.map((item) => item.originalIndex));
     } else {
       setSelectedTracks([]);
     }
   };
 
-  const handleToggleSelect = (idx) => {
+  const handleToggleSelect = (originalIndex) => {
     setSelectedTracks((prev) =>
-      prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]
+      prev.includes(originalIndex)
+        ? prev.filter((i) => i !== originalIndex)
+        : [...prev, originalIndex]
     );
   };
 
-  const handleRemoveTrack = (indexToRemove) => {
+  const handleRemoveTrack = (originalIndexToRemove) => {
     if (setTracks) {
-      setTracks(tracks.filter((_, idx) => idx !== indexToRemove));
-      setSelectedTracks((prev) => prev.filter((i) => i !== indexToRemove));
+      setTracks(tracks.filter((_, idx) => idx !== originalIndexToRemove));
+      setSelectedTracks((prev) => prev.filter((i) => i !== originalIndexToRemove));
     }
   };
 
@@ -126,6 +151,8 @@ export default function TrackList({ tracks, setTracks }) {
 
   if (!tracks || tracks.length === 0) return null;
 
+  const allFilteredSelected = filteredAndSortedTracks.length > 0 && filteredAndSortedTracks.every((item) => selectedTracks.includes(item.originalIndex));
+
   return (
     <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
       
@@ -133,7 +160,7 @@ export default function TrackList({ tracks, setTracks }) {
       <div className="card card-bordered" style={{ padding: '20px', margin: 0 }}>
         <div className="card-header-flex" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', flexWrap: 'wrap', gap: '10px' }}>
           <span className="card-title card-title-teal" style={{ margin: 0, fontSize: '14px' }}>
-            🎵 FAIXAS DETETADAS ({tracks.length} FAIXAS)
+            🎵 FAIXAS DETETADAS ({filteredAndSortedTracks.length} de {tracks.length} FAIXAS)
           </span>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
@@ -141,7 +168,7 @@ export default function TrackList({ tracks, setTracks }) {
               <input
                 type="checkbox"
                 onChange={handleSelectAll}
-                checked={selectedTracks.length === tracks.length && tracks.length > 0}
+                checked={allFilteredSelected}
               />
               Selecionar Todos
             </label>
@@ -161,7 +188,7 @@ export default function TrackList({ tracks, setTracks }) {
               onClick={() => {
                 const tracksToQueue = selectedTracks.length > 0 
                   ? selectedTracks.map(i => tracks[i]) 
-                  : tracks;
+                  : filteredAndSortedTracks.map(item => item.track);
                 addToQueue(tracksToQueue);
               }}
               className="btn btn-teal btn-sm"
@@ -180,54 +207,82 @@ export default function TrackList({ tracks, setTracks }) {
           </div>
         </div>
 
+        {/* BARRA DE BUSCA E FILTRO / ORDENAÇÃO */}
+        <div style={{ display: 'flex', gap: '12px', marginBottom: '15px', flexWrap: 'wrap' }}>
+          <input
+            type="text"
+            placeholder="🔍 Filtrar faixas..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="input-text"
+            style={{ flex: 1, minWidth: '240px', padding: '8px 12px', fontSize: '12px' }}
+          />
+
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="select-dropdown"
+            style={{ width: '200px', padding: '8px 12px', fontSize: '12px', cursor: 'pointer' }}
+          >
+            <option value="original">Ordem de Adição</option>
+            <option value="az">Nome (A - Z)</option>
+            <option value="za">Nome (Z - A)</option>
+          </select>
+        </div>
+
         <div className="playlist-tracks" style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '320px', overflowY: 'auto', paddingRight: '4px' }}>
-          {tracks.map((track, idx) => {
-            const displayTitle = getDisplayTitle(track, idx);
-            const dlState = getTrackState(track);
+          {filteredAndSortedTracks.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '20px', color: '#94a3b8', fontSize: '13px' }}>
+              Nenhuma faixa encontrada para "{searchQuery}".
+            </div>
+          ) : (
+            filteredAndSortedTracks.map(({ track, originalIndex, displayTitle }) => {
+              const dlState = getTrackState(track);
 
-            return (
-              <div key={idx} className="playlist-track-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', backgroundColor: '#0b0f19', border: '1px solid #1f2937', borderRadius: '8px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden', flex: 1 }}>
-                  <input
-                    type="checkbox"
-                    checked={selectedTracks.includes(idx)}
-                    onChange={() => handleToggleSelect(idx)}
-                  />
-                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '480px', fontSize: '13px', color: '#cbd5e1' }}>
-                    {idx + 1}. {displayTitle}
-                  </span>
-                </div>
+              return (
+                <div key={originalIndex} className="playlist-track-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', backgroundColor: '#0b0f19', border: '1px solid #1f2937', borderRadius: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden', flex: 1 }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedTracks.includes(originalIndex)}
+                      onChange={() => handleToggleSelect(originalIndex)}
+                    />
+                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '480px', fontSize: '13px', color: '#cbd5e1' }}>
+                      {originalIndex + 1}. {displayTitle}
+                    </span>
+                  </div>
 
-                <div className="track-actions" style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
-                  <button
-                    onClick={() => handleDownload(track, idx)}
-                    disabled={dlState === 'busy'}
-                    className="btn btn-dark btn-sm"
-                    title={dlState === 'downloaded' ? 'Já baixada: clique para baixar de novo' : 'Enviar para a Central de Downloads'}
-                    style={{ backgroundColor: dlState === 'downloaded' ? '#15803d' : '#0284c7', color: '#fff', fontSize: '11px', padding: '4px 10px' }}
-                  >
-                    {dlState === 'busy' ? '⬇ Baixando…' : dlState === 'waiting' ? '⏳ Na Central' : dlState === 'downloaded' ? '✓ Baixada' : '⬇ Baixar'}
-                  </button>
-                  <button
-                    onClick={() => setQueueAndPlay(tracks, idx)}
-                    className="btn btn-dark btn-sm"
-                    title="Tocar esta faixa e definir a fila a partir daqui"
-                    style={{ fontSize: '11px', padding: '4px 10px' }}
-                  >
-                    ▶ Ouvir
-                  </button>
-                  <button
-                    onClick={() => handleRemoveTrack(idx)}
-                    className="btn btn-red btn-sm"
-                    title="Remover"
-                    style={{ fontSize: '11px', padding: '4px 8px' }}
-                  >
-                    ✕
-                  </button>
+                  <div className="track-actions" style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                    <button
+                      onClick={() => handleDownload(track, originalIndex)}
+                      disabled={dlState === 'busy'}
+                      className="btn btn-dark btn-sm"
+                      title={dlState === 'downloaded' ? 'Já baixada: clique para baixar de novo' : 'Enviar para a Central de Downloads'}
+                      style={{ backgroundColor: dlState === 'downloaded' ? '#15803d' : '#0284c7', color: '#fff', fontSize: '11px', padding: '4px 10px' }}
+                    >
+                      {dlState === 'busy' ? '⬇ Baixando…' : dlState === 'waiting' ? '⏳ Na Central' : dlState === 'downloaded' ? '✓ Baixada' : '⬇ Baixar'}
+                    </button>
+                    <button
+                      onClick={() => setQueueAndPlay(tracks, originalIndex)}
+                      className="btn btn-dark btn-sm"
+                      title="Tocar esta faixa e definir a fila a partir daqui"
+                      style={{ fontSize: '11px', padding: '4px 10px' }}
+                    >
+                      ▶ Ouvir
+                    </button>
+                    <button
+                      onClick={() => handleRemoveTrack(originalIndex)}
+                      className="btn btn-red btn-sm"
+                      title="Remover"
+                      style={{ fontSize: '11px', padding: '4px 8px' }}
+                    >
+                      ✕
+                    </button>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
       </div>
 

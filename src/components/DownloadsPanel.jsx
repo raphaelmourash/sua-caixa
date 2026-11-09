@@ -104,6 +104,7 @@ function KindToggle({ value, onChange, small }) {
   );
 }
 
+/** Seletor dinâmico que consulta as resoluções reais disponíveis no YouTube para o item */
 function DynamicQualitySelect({ url, value, onChange, small }) {
   const [qualities, setQualities] = useState(["1080p", "720p", "480p", "360p"]);
   const [loading, setLoading] = useState(false);
@@ -152,25 +153,6 @@ function DynamicQualitySelect({ url, value, onChange, small }) {
   );
 }
 
-function QualitySelect({ value, onChange, small }) {
-  return (
-    <select
-      value={value || '1080'}
-      onChange={(e) => onChange(e.target.value)}
-      aria-label="Qualidade do vídeo"
-      style={{
-        background: '#1e293b', color: '#e2e8f0', border: '1px solid #334155',
-        borderRadius: '6px', padding: small ? '2px 6px' : '4px 8px', fontSize: small ? '11px' : '12px', outline: 'none', cursor: 'pointer',
-      }}
-    >
-      <option value="1080">1080p</option>
-      <option value="720">720p</option>
-      <option value="480">480p</option>
-      <option value="360">360p</option>
-    </select>
-  );
-}
-
 const small = { fontSize: '11px', padding: '6px 10px' };
 
 const toTrack = (d) => d.track || { title: d.title, webpage_url: d.url, thumbnail: d.thumbnail };
@@ -191,11 +173,6 @@ export default function DownloadsPanel({ onPreview }) {
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
-
-  const handlePlayAll = () => {
-    const list = selectedIds.length > 0 ? downloads.filter((d) => selected.has(d.id)) : downloads;
-    if (list.length > 0) setQueueAndPlay(list.map(toTrack), 0);
-  };
 
   const handleListen = (d, idx) => {
     if (onPreview) onPreview(toTrack(d));
@@ -231,10 +208,6 @@ export default function DownloadsPanel({ onPreview }) {
                 Selecionar Todos
               </label>
 
-              <button onClick={handlePlayAll} className="btn btn-teal btn-sm">
-                ▶ Tocar Fila (Jukebox)
-              </button>
-
               {finished > 0 && (
                 <button onClick={api.clearFinished} className="btn btn-red btn-sm" style={{ fontWeight: 'bold' }}>
                   🗑️ Limpar Concluídos
@@ -250,12 +223,6 @@ export default function DownloadsPanel({ onPreview }) {
             <KindToggle value={settings.defaultKind} onChange={api.setDefaultKind} />
           </span>
 
-          {settings.defaultKind === 'video' && (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', color: '#94a3b8', fontSize: '12px' }}>
-              Qualidade padrão
-              <QualitySelect value={settings.defaultQuality} onChange={api.setDefaultQuality} />
-            </span>
-          )}
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#94a3b8', fontSize: '12px', cursor: 'pointer' }}>
             <input type="checkbox" checked={settings.autoStart} onChange={(e) => api.setAutoStart(e.target.checked)} />
             Baixar assim que adicionar
@@ -279,7 +246,7 @@ export default function DownloadsPanel({ onPreview }) {
           <div style={{ padding: '24px 12px', textAlign: 'center', color: '#94a3b8', fontSize: '13px', lineHeight: 1.7 }}>
             <div style={{ fontSize: '28px', marginBottom: '6px' }}>⬇</div>
             <strong style={{ color: '#e2e8f0' }}>Nenhum download por aqui ainda</strong>
-            <div>Clique em <strong>⬇ Baixar</strong> em qualquer faixa. Você escolhe MP3 ou MP4 e a resolução desejada acima.</div>
+            <div>Clique em <strong>⬇ Baixar</strong> em qualquer faixa. Você escolhe MP3 ou MP4 e a resolução diretamente em cada item.</div>
           </div>
         ) : (
           <>

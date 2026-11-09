@@ -13,6 +13,7 @@ const toStreams = (r) =>
     : { audio: r?.audio ?? null, video: r?.video ?? null };
 
 export function JukeboxProvider({ children }) {
+  // Fila independente: inicia sempre estritamente vazia (sem carregar do storage)
   const [queue, setQueue] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -140,7 +141,7 @@ export function JukeboxProvider({ children }) {
     };
   }, [currentTrack, queue, currentIndex, isVideoMode]);
 
-  // Adiciona faixas à fila existente
+  // Adiciona faixas acumulando na fila (Carrinho de compras)
   const addToQueue = (tracks) => {
     setQueue((prev) => {
       const newQueue = [...prev, ...tracks];
@@ -152,7 +153,7 @@ export function JukeboxProvider({ children }) {
     });
   };
 
-  // Define uma nova lista de reprodução e começa imediatamente na posição indicada
+  // Define uma nova lista de reprodução e começa imediatamente na posição indicada (Isolamento)
   const setQueueAndPlay = (tracks, startIndex = 0) => {
     if (!tracks || tracks.length === 0) return;
     setQueue(tracks);
@@ -248,7 +249,7 @@ export function JukeboxProvider({ children }) {
         addToQueue,
         setQueueAndPlay,
         removeFromQueue,
-        reorderQueue, // <--- Função adicionada ao contexto
+        reorderQueue,
         playIndex,
         playNext,
         playPrevious,
