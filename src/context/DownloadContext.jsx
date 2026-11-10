@@ -47,8 +47,18 @@ export function applyProgress(d, p) {
   switch (p.phase) {
     case 'preparing':
       return { ...d, status: 'preparing', percent: 0, speed: null, eta: null };
-    case 'done':
-      return { ...d, status: 'done', percent: 100, speed: null, eta: null, path: p.filename ?? d.path, wantPause: false };
+    case 'done': {
+      const finalPath = p.path ?? p.filename ?? d.path ?? '';
+      return { 
+        ...d, 
+        status: 'done', 
+        percent: 100, 
+        speed: null, 
+        eta: null, 
+        path: finalPath, 
+        wantPause: false 
+      };
+    }
     case 'error':
       return { ...d, status: 'error', error: p.message || 'Erro no download', speed: null, eta: null };
     case 'cancelled':
@@ -77,6 +87,7 @@ export function applyProgress(d, p) {
         percent: Math.min(99, Math.max(d.percent || 0, overall)),
         speed: p.speed ?? d.speed,
         eta: p.eta ?? d.eta,
+        path: p.path ?? p.filename ?? d.path,
       };
     }
   }
@@ -211,7 +222,7 @@ export function DownloadProvider({ children }) {
       if (!item) return;
       commit((items) => items.map((d) => (d.id === p.id ? applyProgress(d, p) : d)));
       if (p.phase === 'done') {
-        addHistory({ key: item.key, kind: item.kind, title: item.title, path: p.filename ?? null, at: Date.now() });
+        addHistory({ key: item.key, kind: item.kind, title: item.title, path: p.path ?? p.filename ?? null, at: Date.now() });
       }
     })
       .then((fn) => (disposed ? fn() : (unlisten = fn)))
@@ -359,8 +370,11 @@ export function DownloadProvider({ children }) {
   }, [commit]);
 
   const openFolder = useCallback((id) => {
-    const d = downloadsRef.downloads.find((x) => x.id === id) || downloadsRef.current.find((x) => x.id === id);
-    if (!d?.path) { flash('Caminho do arquivo indisponível.'); return; }
+    const d = downloadsRef.current.find((x) => x.id === id);
+    if (!d?.path) { 
+      flash('Caminho do arquivo indisponível.'); 
+      return; 
+    }
     revealInFolder(d.path).catch(() => flash('Não foi possível abrir a pasta.'));
   }, [flash]);
 

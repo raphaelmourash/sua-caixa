@@ -19,6 +19,7 @@ pub struct DownloadProgress {
     pub speed: Option<f64>,
     pub eta: Option<f64>,
     pub filename: Option<String>,
+    pub path: Option<String>,
     pub message: Option<String>,
 }
 
@@ -33,6 +34,7 @@ impl DownloadProgress {
             speed: None,
             eta: None,
             filename: None,
+            path: None,
             message: None,
         }
     }
@@ -86,6 +88,8 @@ pub fn build_args(url: &str, kind: &str, out_dir: &str, proxy: &str, quality: &s
         "postprocess:[PP] %(progress.postprocessor)s".to_string(),
         "--print".to_string(),
         "after_move:[FILE] %(filepath)s".to_string(),
+        "--print".to_string(),
+        "destination:[FILE] %(filepath)s".to_string(),
         "-o".to_string(),
         format!("{}/%(title)s.%(ext)s", out_dir.trim_end_matches(['/', '\\'])),
     ];
@@ -120,6 +124,16 @@ fn num(s: &str) -> Option<f64> {
 pub fn parse_line(id: &str, line: &str) -> Option<DownloadProgress> {
     let line = line.trim_end();
     
+    if line.starts_with("[FILE] ") {
+        let path_str = line.strip_prefix("[FILE] ").unwrap().trim().to_string();
+        if !path_str.is_empty() && path_str != "NA" {
+            let mut p = DownloadProgress::new(id, "file");
+            p.filename = Some(path_str.clone());
+            p.path = Some(path_str);
+            return Some(p);
+        }
+    }
+
     if line.contains("Extracting URL") || line.contains("Downloading webpage") || line.contains("Downloading m3u8") || line.contains("Downloading 1 format") || line.contains("[download] Destination:") || line.contains("HLS") {
         let mut p = DownloadProgress::new(id, "downloading");
         p.percent = Some(5.0);
@@ -149,11 +163,7 @@ pub fn parse_line(id: &str, line: &str) -> Option<DownloadProgress> {
         p.filename = f.get(5).map(|s| s.trim().to_string()).filter(|s| !s.is_empty() && s != "NA");
         return Some(p);
     }
-    if let Some(path) = line.strip_prefix("[FILE] ") {
-        let mut p = DownloadProgress::new(id, "file");
-        p.filename = Some(path.trim().to_string());
-        return Some(p);
-    }
+    
     if line.starts_with("[PP]") {
         let mut p = DownloadProgress::new(id, "processing");
         p.percent = Some(100.0);
@@ -212,11 +222,9 @@ pub fn cancel_download_inner(id: &str, remove_partial: bool) -> bool {
 
 pub async fn run_download<F>(id: String, program: String, args: Vec<String>, emit: F) -> Result<(), String>
 where
-    F: Fn(DownloadProgress) + Send + Sync + 'static + Clone, // <--- Adicionado Clone aqui
+    F: Fn(DownloadProgress) + Send + Sync + 'static + Clone,
 {
     emit(DownloadProgress::new(&id, "preparing"));
-
-    println!("[DOWNLOAD] A iniciar programa: {} com args: {:?}", program, args);
 
     let mut cmd = Command::new(&program);
     cmd.args(&args)
@@ -233,7 +241,6 @@ where
         Ok(c) => c,
         Err(e) => {
             let err_msg = format!("Falha crítica ao iniciar o executável '{}': {e}", program);
-            eprintln!("[DOWNLOAD ERROR] {}", err_msg);
             let mut ev = DownloadProgress::new(&id, "error");
             ev.message = Some(err_msg.clone());
             emit(ev);
@@ -255,7 +262,6 @@ where
         let mut last = String::new();
         let mut lines = BufReader::new(stderr).lines();
         while let Ok(Some(l)) = lines.next_line().await {
-            eprintln!("[yt-dlp stderr] {}", l);
             if !l.trim().is_empty() {
                 last = l;
             }
@@ -281,10 +287,22 @@ where
     });
 
     while let Ok(Some(line)) = lines.next_line().await {
-        println!("[yt-dlp stdout] {}", line);
+        // Captura linhas de destino diretamente na saída para garantir o path mesmo sem prefixo [FILE]
+        if line.contains("Destination:") || line.contains("has already been downloaded") {
+            let parts: Vec<&str> = line.split(':').collect();
+            if parts.len() > 1 {
+                let p_str = parts[1..].join(":").trim().to_string();
+                if !p_str.is_empty() {
+                    final_path = Some(p_str);
+                }
+            }
+        }
+
         if let Some(ev) = parse_line(&id, &line) {
             if ev.phase == "file" {
-                final_path = ev.filename.clone();
+                if let Some(p_str) = &ev.path {
+                    final_path = Some(p_str.clone());
+                }
                 continue;
             }
             if ev.phase == "downloading" {
@@ -324,7 +342,8 @@ where
 
     if status.success() {
         let mut ev = DownloadProgress::new(&id, "done");
-        ev.filename = final_path;
+        ev.filename = final_path.clone();
+        ev.path = final_path.clone();
         ev.percent = Some(100.0);
         emit(ev);
         Ok(())
@@ -375,7 +394,12 @@ pub async fn download_with_progress(
     quality: Option<String>,
 ) -> Result<(), String> {
     let dir = if out_dir.is_empty() {
-        app.path().download_dir().map_err(|e| e.to_string())?.to_string_lossy().to_string()
+        if let Ok(d) = app.path().download_dir() {
+            d.to_string_lossy().to_string()
+        } else {
+            let profile = std::env::var("USERPROFILE").unwrap_or_else(|_| "C:\\".to_string());
+            std::path::PathBuf::from(profile).join("Downloads").to_string_lossy().to_string()
+        }
     } else {
         out_dir
     };
@@ -398,4 +422,46 @@ pub fn cancel_download(id: String, remove_partial: bool) -> bool {
 #[tauri::command]
 pub fn reveal_in_folder(path: String) -> Result<(), String> {
     reveal(&path)
+}
+
+#[tauri::command]
+pub async fn open_downloads_folder(app: AppHandle) -> Result<(), String> {
+    let download_dir = if let Ok(dir) = app.path().download_dir() {
+        if dir.exists() && !dir.to_string_lossy().is_empty() {
+            dir
+        } else {
+            let profile = std::env::var("USERPROFILE").unwrap_or_else(|_| "C:\\".to_string());
+            std::path::PathBuf::from(profile).join("Downloads")
+        }
+    } else {
+        let profile = std::env::var("USERPROFILE").unwrap_or_else(|_| "C:\\".to_string());
+        std::path::PathBuf::from(profile).join("Downloads")
+    };
+
+    let path_str = download_dir.to_string_lossy();
+    
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("explorer")
+            .arg(path_str.to_string())
+            .creation_flags(0x0800_0000)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(path_str.to_string())
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(path_str.to_string())
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
