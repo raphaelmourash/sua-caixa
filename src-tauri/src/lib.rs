@@ -1,8 +1,14 @@
 use std::process::Command;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use tauri::Manager;
 
 // Declara o módulo download.rs que gere o progresso e cancelamento
 mod download;
+
+/// Constante do Windows para impedir o aparecimento da janela de consola (CREATE_NO_WINDOW = 0x08000000)
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 // Localiza o executável do yt-dlp no ambiente Tauri ou no sistema
 fn get_ytdlp_executable(app_handle: &tauri::AppHandle) -> String {
@@ -40,6 +46,9 @@ fn fetch_ytdlp_url(ytdlp_bin: &str, url: &str, fmt: &str, proxy: &str) -> Result
         args.insert(0, "--proxy".to_string());
     }
 
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
     let output = cmd.args(&args).output();
 
     match output {
@@ -71,6 +80,9 @@ async fn run_ytdlp(app_handle: tauri::AppHandle, url: String, proxy: String) -> 
         args.insert(0, "--proxy".to_string());
     }
 
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
     let output = cmd.args(&args).output();
 
     match output {
@@ -95,6 +107,9 @@ async fn analyze_playlist(app_handle: tauri::AppHandle, url: String, proxy: Stri
         args.insert(0, proxy);
         args.insert(0, "--proxy".to_string());
     }
+
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
 
     let output = cmd.args(&args).output();
 
@@ -121,6 +136,9 @@ async fn get_available_qualities(app_handle: tauri::AppHandle, url: String, prox
         args.insert(0, proxy);
         args.insert(0, "--proxy".to_string());
     }
+
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
 
     let output = cmd.args(&args).output().map_err(|e| e.to_string())?;
     if !output.status.success() {
