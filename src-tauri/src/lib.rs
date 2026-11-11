@@ -199,7 +199,8 @@ pub fn run() {
             get_stream_url,
             download::download_with_progress,
             download::cancel_download,
-            download::reveal_in_folder
+            download::reveal_in_folder,
+            download::open_downloads_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
