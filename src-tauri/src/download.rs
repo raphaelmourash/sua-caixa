@@ -67,8 +67,14 @@ pub fn ytdlp_program(app_handle: &tauri::AppHandle) -> String {
     "yt-dlp".to_string()
 }
 
-/// Localiza o diretório da pasta bin onde o ffmpeg.exe está guardado.
-pub fn ffmpeg_directory() -> String {
+/// Localiza o diretório da pasta bin onde o ffmpeg.exe está guardado (corrigido para usar os recursos do Tauri).
+pub fn ffmpeg_directory(app_handle: &tauri::AppHandle) -> String {
+    if let Ok(path) = app_handle.path().resolve("bin", tauri::path::BaseDirectory::Resource) {
+        if path.exists() {
+            return path.to_string_lossy().into_owned();
+        }
+    }
+
     if let Ok(mut current_dir) = std::env::current_dir() {
         current_dir.push("src-tauri");
         current_dir.push("bin");
@@ -89,8 +95,8 @@ pub fn extra_args() -> Vec<String> {
     vec![]
 }
 
-pub fn build_args(url: &str, kind: &str, out_dir: &str, proxy: &str, quality: &str) -> Vec<String> {
-    let ffmpeg_dir = ffmpeg_directory();
+pub fn build_args(app_handle: &tauri::AppHandle, url: &str, kind: &str, out_dir: &str, proxy: &str, quality: &str) -> Vec<String> {
+    let ffmpeg_dir = ffmpeg_directory(app_handle);
 
     let mut a: Vec<String> = vec![
         "--newline".to_string(),
@@ -102,7 +108,7 @@ pub fn build_args(url: &str, kind: &str, out_dir: &str, proxy: &str, quality: &s
         "--no-warnings".to_string(),
         "--no-mtime".to_string(),
         "--progress".to_string(),
-        // Força o yt-dlp a localizar o ffmpeg e ffprobe na pasta bin do projeto
+        // Força o yt-dlp a localizar o ffmpeg e ffprobe na pasta bin correta do Tauri
         "--ffmpeg-location".to_string(),
         ffmpeg_dir,
         "--progress-template".to_string(),
@@ -427,7 +433,7 @@ pub async fn download_with_progress(
     };
     
     let program = ytdlp_program(&app);
-    let args = build_args(&url, &kind, &dir, &proxy, quality.as_deref().unwrap_or("1080"));
+    let args = build_args(&app, &url, &kind, &dir, &proxy, quality.as_deref().unwrap_or("1080"));
     let handle = app.clone();
     
     run_download(id, program, args, move |p| {
