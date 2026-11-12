@@ -3,6 +3,11 @@ import { getStreamUrl } from '../services/ytdlp';
 
 const JukeboxContext = createContext();
 
+// Cada item da fila ganha um id próprio e estável. É ele que permite arrastar/reordenar
+// (e ter a mesma música duas vezes na fila sem confundir o React).
+let queueSeq = 0;
+const withQueueId = (track) => ({ ...track, queueId: `q${++queueSeq}` });
+
 // URLs assinadas do YouTube expiram em ~6h; renovamos antes disso
 const STREAM_TTL_MS = 5 * 60 * 60 * 1000;
 
@@ -144,7 +149,7 @@ export function JukeboxProvider({ children }) {
   // Adiciona faixas acumulando na fila (Carrinho de compras)
   const addToQueue = (tracks) => {
     setQueue((prev) => {
-      const newQueue = [...prev, ...tracks];
+      const newQueue = [...prev, ...tracks.map(withQueueId)];
       if (!isPlaying && !currentTrack && newQueue.length > 0) {
         setCurrentIndex(0);
         setIsPlaying(true);
@@ -156,7 +161,7 @@ export function JukeboxProvider({ children }) {
   // Define uma nova lista de reprodução e começa imediatamente na posição indicada (Isolamento)
   const setQueueAndPlay = (tracks, startIndex = 0) => {
     if (!tracks || tracks.length === 0) return;
-    setQueue(tracks);
+    setQueue(tracks.map(withQueueId));
     setCurrentIndex(startIndex);
     setIsPlaying(true);
   };
