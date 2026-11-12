@@ -32,7 +32,10 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "bin/yt-dlp.exe"
+      "bin/yt-dlp.exe",
+      "bin/ffmpeg.exe",
+      "bin/ffprobe.exe",
+      "bin/ffplay.exe"
     ]
   }
 }
