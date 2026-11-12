@@ -67,11 +67,31 @@ pub fn ytdlp_program(app_handle: &tauri::AppHandle) -> String {
     "yt-dlp".to_string()
 }
 
+/// Localiza o diretório da pasta bin onde o ffmpeg.exe está guardado.
+pub fn ffmpeg_directory() -> String {
+    if let Ok(mut current_dir) = std::env::current_dir() {
+        current_dir.push("src-tauri");
+        current_dir.push("bin");
+        if current_dir.exists() {
+            return current_dir.to_string_lossy().into_owned();
+        }
+    }
+    if let Ok(mut current_dir) = std::env::current_dir() {
+        current_dir.push("bin");
+        if current_dir.exists() {
+            return current_dir.to_string_lossy().into_owned();
+        }
+    }
+    "bin".to_string()
+}
+
 pub fn extra_args() -> Vec<String> {
     vec![]
 }
 
 pub fn build_args(url: &str, kind: &str, out_dir: &str, proxy: &str, quality: &str) -> Vec<String> {
+    let ffmpeg_dir = ffmpeg_directory();
+
     let mut a: Vec<String> = vec![
         "--newline".to_string(),
         "--no-playlist".to_string(),
@@ -82,6 +102,9 @@ pub fn build_args(url: &str, kind: &str, out_dir: &str, proxy: &str, quality: &s
         "--no-warnings".to_string(),
         "--no-mtime".to_string(),
         "--progress".to_string(),
+        // Força o yt-dlp a localizar o ffmpeg e ffprobe na pasta bin do projeto
+        "--ffmpeg-location".to_string(),
+        ffmpeg_dir,
         "--progress-template".to_string(),
         "download:[DL] %(progress.downloaded_bytes)s|%(progress.total_bytes)s|%(progress.total_bytes_estimate)s|%(progress.speed)s|%(progress.eta)s|%(progress.filename)s".to_string(),
         "--progress-template".to_string(),
@@ -287,7 +310,6 @@ where
     });
 
     while let Ok(Some(line)) = lines.next_line().await {
-        // Captura linhas de destino diretamente na saída para garantir o path mesmo sem prefixo [FILE]
         if line.contains("Destination:") || line.contains("has already been downloaded") {
             let parts: Vec<&str> = line.split(':').collect();
             if parts.len() > 1 {
