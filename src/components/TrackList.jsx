@@ -36,7 +36,7 @@ export default function TrackList({ tracks, setTracks }) {
       const capaOficial = primeiraFaixa.thumbnail || primeiraFaixa.cover_url || primeiraFaixa.thumbnails?.[0]?.url || '';
       
       const duracaoStr = fmtTotalDuration(tracks);
-      const anoOficial = primeiraFaixa.release_year || primeiraFaixa.upload_date?.slice(0, 4) || '2025';
+      const anoOficial = primeiraFaixa.release_year || primeiraFaixa.upload_date?.slice(0, 4) || '2026';
 
       setPlaylistName((prev) => prev || sugeridoPlaylist);
       setAutoMetadata({
@@ -58,6 +58,7 @@ export default function TrackList({ tracks, setTracks }) {
   };
 
   const filteredAndSortedTracks = useMemo(() => {
+    if (!tracks || !Array.isArray(tracks)) return [];
     const mapped = tracks.map((track, originalIndex) => ({
       track,
       originalIndex,
@@ -124,7 +125,6 @@ export default function TrackList({ tracks, setTracks }) {
 
   const handleSaveNewPlaylist = async () => {
     const name = playlistName.trim() || autoMetadata.album || 'Minha Playlist';
-
     const savedPlaylists = JSON.parse(localStorage.getItem('nexus_local_playlists') || '{}');
 
     if (savedPlaylists[name] && !window.confirm(`Já existe uma playlist chamada "${name}". Substituir?`)) {
@@ -166,14 +166,12 @@ export default function TrackList({ tracks, setTracks }) {
 
     const savedPlaylists = JSON.parse(localStorage.getItem('nexus_local_playlists') || '{}');
     const target = savedPlaylists[existingPlaylist];
-
     if (!target) return;
 
     const currentTracks = Array.isArray(target) ? target : (target.tracks || []);
     const keyOf = (t) => getVideoId(t) || t.webpage_url || t.url || t.id;
     const existingKeys = new Set(currentTracks.map(keyOf));
     
-    // Correção: Mapeia corretamente usando 't' em vez de 'track' indefinido
     const fresh = tracks.filter((t) => !existingKeys.has(keyOf(t))).map((t, idx) => ({
       ...t,
       title: getDisplayTitle(t, idx),
@@ -189,7 +187,6 @@ export default function TrackList({ tracks, setTracks }) {
     savedPlaylists[existingPlaylist] = {
       ...(typeof target === 'object' ? target : {}),
       tracks: updatedTracks,
-      // Remove a capa estática única para forçar a exibição do mosaico com as capas misturadas
       coverUrl: ''
     };
 
@@ -200,7 +197,14 @@ export default function TrackList({ tracks, setTracks }) {
 
   const existingNames = Object.keys(JSON.parse(localStorage.getItem('nexus_local_playlists') || '{}'));
 
-  if (!tracks || tracks.length === 0) return null;
+  // Se não houver faixas, mostra uma mensagem amigável em vez de sumir completamente
+  if (!tracks || tracks.length === 0) {
+    return (
+      <div className="card card-bordered" style={{ padding: '30px', textAlign: 'center', marginTop: '20px', color: '#94a3b8', fontSize: '13px' }}>
+        🔍 Nenhuma faixa carregada. Cole um link do YouTube ou faça uma pesquisa inteligente acima para começar.
+      </div>
+    );
+  }
 
   const allFilteredSelected = filteredAndSortedTracks.length > 0 && filteredAndSortedTracks.every((item) => selectedTracks.includes(item.originalIndex));
 

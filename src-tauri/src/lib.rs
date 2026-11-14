@@ -3,8 +3,9 @@ use std::process::Command;
 use std::os::windows::process::CommandExt;
 use tauri::Manager;
 
-// Declara o módulo download.rs que gere o progresso e cancelamento
+// Declara os módulos de gestão
 mod download;
+mod search;
 
 /// Constante do Windows para impedir o aparecimento da janela de consola (CREATE_NO_WINDOW = 0x08000000)
 #[cfg(target_os = "windows")]
@@ -125,7 +126,6 @@ async fn analyze_playlist(app_handle: tauri::AppHandle, url: String, proxy: Stri
     }
 }
 
-/// 🔍 Inspeciona o vídeo e retorna as alturas (resoluções) reais disponíveis
 #[tauri::command]
 async fn get_available_qualities(app_handle: tauri::AppHandle, url: String, proxy: String) -> Result<Vec<u32>, String> {
     let ytdlp_bin = get_ytdlp_executable(&app_handle);
@@ -175,10 +175,7 @@ async fn get_stream_url(
     let ytdlp_bin = get_ytdlp_executable(&app_handle);
     let q = quality.unwrap_or_else(|| "1080".to_string());
 
-    // 1. Obtém o stream de áudio puro
     let audio_url = fetch_ytdlp_url(&ytdlp_bin, &url, "ba", &proxy)?;
-
-    // 2. Obtém o stream de vídeo adaptado à qualidade escolhida (ex: height<=1080)
     let fmt_video = format!("bv*[height<={q}]+ba/b[height<={q}]/b");
     let video_url = fetch_ytdlp_url(&ytdlp_bin, &url, &fmt_video, &proxy).unwrap_or_default();
 
@@ -200,7 +197,9 @@ pub fn run() {
             download::download_with_progress,
             download::cancel_download,
             download::reveal_in_folder,
-            download::open_downloads_folder
+            download::open_downloads_folder,
+            search::search_youtube,
+            search::cancel_search
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

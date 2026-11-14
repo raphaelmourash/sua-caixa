@@ -2,6 +2,24 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
+/** 🔍 Nova função: Busca vídeos e playlists por palavras-chave ou URL de forma inteligente */
+export async function searchYoutube(query, limit = 30, sort = 'relevance', proxy = '') {
+  try {
+    const results = await invoke('search_youtube', {
+      id: 'global-youtube-search',
+      query,
+      limit,
+      sort,
+      proxy
+    });
+    return results;
+  } catch (error) {
+    if (error === 'cancelled') return [];
+    console.error('Erro na busca do YouTube:', error);
+    throw error;
+  }
+}
+
 export async function analyzePlaylist(url, proxy = '') {
   try {
     const response = await invoke('analyze_playlist', { url, proxy });
@@ -25,7 +43,7 @@ export async function getAvailableQualities(videoUrl, proxy = '') {
     return heights.map(h => `${h}p`);
   } catch (error) {
     console.error('Erro ao obter qualidades disponíveis:', error);
-    return ["1080p", "720p", "480p", "360p"]; // Fallback padrão caso falhe
+    return ["1080p", "720p", "480p", "360p"];
   }
 }
 
@@ -56,7 +74,6 @@ export async function runYtdlp(url, proxy = '') {
 
 // ---------- Download com progresso em tempo real ----------
 
-/** Inicia um download. O progresso chega pelo evento "download-progress" (veja onDownloadProgress). */
 export async function startDownload({ id, url, kind = 'audio', quality = '1080', outDir = '', proxy = '' }) {
   return invoke('download_with_progress', { 
     id, 
@@ -68,17 +85,14 @@ export async function startDownload({ id, url, kind = 'audio', quality = '1080',
   });
 }
 
-/** Escuta o progresso de todos os downloads. Devolve (via Promise) a função para cancelar a escuta. */
 export function onDownloadProgress(callback) {
   return listen('download-progress', (event) => callback(event.payload));
 }
 
-/** Cancela (removePartial=true, apaga os parciais) ou PAUSA (removePartial=false) um download em andamento. */
 export async function cancelDownload(id, removePartial = true) {
   return invoke('cancel_download', { id, removePartial });
 }
 
-/** Abre a pasta do arquivo baixado já selecionando o arquivo. */
 export async function revealInFolder(path) {
   return invoke('reveal_in_folder', { path });
 }

@@ -89,6 +89,7 @@ function Dashboard({ currentUser, onLogout }) {
                   onAnalyze={handleAnalyze} 
                   loading={loading}
                   tracks={tracks}
+                  setTracks={setTracks}
                 />
                 <TrackList tracks={tracks} setTracks={setTracks} />
               </div>
